@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  go-tcb-notify:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: go-tcb-notify:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://user:password@postgres:5432/go_tcb_notify?sslmode=disable
+      - RPC_URL=http://ethereum-node:8545
+      - REGISTRY_ADDRESS=0x1234567890123456789012345678901234567890
+      - PCS_BASE_URL=https://api.trustedservices.intel.com
+      - TCB_CHECK_INTERVAL=1h
+      - QUOTE_CHECK_INTERVAL=5m
+      - ALERT_WEBHOOK_URL=https://webhook.site/your-unique-url
+      - LOG_LEVEL=info
+      - METRICS_ENABLED=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=go_tcb_notify
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d go_tcb_notify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
