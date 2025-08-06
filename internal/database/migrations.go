@@ -6,6 +6,14 @@ import (
 )
 
 const (
+	createFMSPCTable = `
+	CREATE TABLE IF NOT EXISTS fmspcs (
+		fmspc VARCHAR(16) PRIMARY KEY,
+		platform VARCHAR(32) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);`
+
 	createTCBInfoTable = `
 	CREATE TABLE IF NOT EXISTS tdx_tcb_info (
 		fmspc VARCHAR(16) NOT NULL,
@@ -17,7 +25,8 @@ const (
 		tcb_levels JSONB NOT NULL,
 		raw_response JSONB NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		PRIMARY KEY (fmspc, tcb_evaluation_data_number)
+		PRIMARY KEY (fmspc, tcb_evaluation_data_number),
+		FOREIGN KEY (fmspc) REFERENCES fmspcs(fmspc)
 	);`
 
 	createMonitoredQuotesTable = `
@@ -29,7 +38,8 @@ const (
 		tcb_components JSONB NOT NULL,
 		current_status VARCHAR(32) NOT NULL,
 		needs_update BOOLEAN DEFAULT FALSE,
-		last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (fmspc) REFERENCES fmspcs(fmspc)
 	);`
 
 	createAlertHistoryTable = `
@@ -47,11 +57,13 @@ const (
 	CREATE INDEX IF NOT EXISTS idx_quotes_fmspc ON monitored_tdx_quotes(fmspc);
 	CREATE INDEX IF NOT EXISTS idx_quotes_needs_update ON monitored_tdx_quotes(needs_update);
 	CREATE INDEX IF NOT EXISTS idx_alert_history_address ON alert_history(quote_address);
+	CREATE INDEX IF NOT EXISTS idx_fmspcs_platform ON fmspcs(platform);
 	`
 )
 
 func Migrate(db *sql.DB) error {
 	migrations := []string{
+		createFMSPCTable,
 		createTCBInfoTable,
 		createMonitoredQuotesTable,
 		createAlertHistoryTable,

@@ -15,53 +15,90 @@ import (
 )
 
 type TCBFetcher struct {
-	config *config.Config
-	db     *sql.DB
-	client *http.Client
+	config       *config.Config
+	db           *sql.DB
+	client       *http.Client
+	fmspcService *FMSPCService
 }
 
-func NewTCBFetcher(cfg *config.Config, db *sql.DB) *TCBFetcher {
+func NewTCBFetcher(cfg *config.Config, db *sql.DB, fmspcService *FMSPCService) *TCBFetcher {
 	return &TCBFetcher{
-		config: cfg,
-		db:     db,
-		client: &http.Client{Timeout: 30 * time.Second},
+		config:       cfg,
+		db:           db,
+		fmspcService: fmspcService,
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
 	}
 }
 
 func (f *TCBFetcher) Start(ctx context.Context) {
-	ticker := time.NewTicker(f.config.TCBCheckInterval)
+	logrus.Info("Starting TCB fetcher service")
+
+	// Use the interval from config
+	interval := f.config.TCBCheckInterval
+	if interval == 0 {
+		logrus.Warn("TCB check interval is zero, using default 1h")
+		interval = time.Hour
+	}
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	// Run initial check
-	f.checkTCBUpdates(ctx)
+	if err := f.CheckForUpdates(ctx); err != nil {
+		logrus.WithError(err).Error("Initial TCB check failed")
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			logrus.Info("TCB Fetcher stopping...")
+			logrus.Info("TCB fetcher service stopped")
 			return
 		case <-ticker.C:
-			f.checkTCBUpdates(ctx)
+			if err := f.CheckForUpdates(ctx); err != nil {
+				logrus.WithError(err).Error("TCB check failed")
+			}
 		}
 	}
 }
 
-func (f *TCBFetcher) checkTCBUpdates(ctx context.Context) {
+func (f *TCBFetcher) CheckForUpdates(ctx context.Context) error {
 	logrus.Info("Checking for TCB updates...")
 
-	// Get list of FMSPCs to monitor (this would typically come from the registry)
-	fmspcs := []string{"50806F000000"} // Example FMSPC
+	// Get all FMSPCs from the database
+	fmspcs, err := f.fmspcService.GetAllFMSPCs()
+	if err != nil {
+		return fmt.Errorf("failed to get FMSPCs: %w", err)
+	}
 
-	for _, fmspc := range fmspcs {
-		if err := f.fetchTCBInfo(ctx, fmspc); err != nil {
-			logrus.WithError(err).WithField("fmspc", fmspc).Error("Failed to fetch TCB info")
+	if len(fmspcs) == 0 {
+		logrus.Info("No FMSPCs found, fetching from Intel PCS API...")
+		if err := f.fmspcService.FetchAndStoreAllFMSPCs(ctx); err != nil {
+			return fmt.Errorf("failed to fetch FMSPCs: %w", err)
+		}
+
+		// Get FMSPCs again after fetching
+		fmspcs, err = f.fmspcService.GetAllFMSPCs()
+		if err != nil {
+			return fmt.Errorf("failed to get FMSPCs after fetching: %w", err)
 		}
 	}
+
+	logrus.WithField("count", len(fmspcs)).Info("Checking TCB info for FMSPCs")
+
+	for _, fmspc := range fmspcs {
+		if err := f.fetchTCBInfo(ctx, fmspc.FMSPC); err != nil {
+			logrus.WithError(err).WithField("fmspc", fmspc.FMSPC).Error("Failed to fetch TCB info")
+		}
+	}
+
+	return nil
 }
 
 func (f *TCBFetcher) fetchTCBInfo(ctx context.Context, fmspc string) error {
 	url := fmt.Sprintf("%s/tdx/certification/v4/tcb?fmspc=%s", f.config.PCSBaseURL, fmspc)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -73,8 +110,16 @@ func (f *TCBFetcher) fetchTCBInfo(ctx context.Context, fmspc string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	// Handle different status codes appropriately
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// Continue processing
+	case http.StatusNotFound:
+		// This FMSPC doesn't support TDX - log and skip
+		logrus.WithField("fmspc", fmspc).Debug("FMSPC does not support TDX, skipping")
+		return nil
+	default:
+		return fmt.Errorf("unexpected status code %d for FMSPC %s", resp.StatusCode, fmspc)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -90,19 +135,19 @@ func (f *TCBFetcher) fetchTCBInfo(ctx context.Context, fmspc string) error {
 		return fmt.Errorf("failed to parse TCB response: %w", err)
 	}
 
+	// Set the FMSPC from the URL parameter since it might not be in the response
+	tcbResponse.TCBInfo.FMSPC = fmspc
+
 	// Check if this is a new TCB evaluation data number
 	if f.isNewTCBInfo(fmspc, tcbResponse.TCBInfo.TCBEvaluationDataNumber) {
 		logrus.WithFields(logrus.Fields{
-			"fmspc":                     fmspc,
-			"tcbEvaluationDataNumber":   tcbResponse.TCBInfo.TCBEvaluationDataNumber,
+			"fmspc":                   fmspc,
+			"tcbEvaluationDataNumber": tcbResponse.TCBInfo.TCBEvaluationDataNumber,
 		}).Info("New TCB info detected")
 
 		if err := f.storeTCBInfo(tcbResponse.TCBInfo, body); err != nil {
 			return fmt.Errorf("failed to store TCB info: %w", err)
 		}
-
-		// Trigger quote checking
-		// This would notify the quote checker service
 	}
 
 	return nil

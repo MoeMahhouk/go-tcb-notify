@@ -80,7 +80,7 @@ func (c *QuoteChecker) verifyQuote(address string) error {
 	// This would integrate with go-tdx-guest library to verify the quote
 	// against current TCB information
 	logrus.WithField("address", address).Debug("Verifying quote")
-	
+
 	// Update last_checked timestamp
 	_, err := c.db.Exec(
 		"UPDATE monitored_tdx_quotes SET last_checked = NOW(), needs_update = false WHERE address = $1",

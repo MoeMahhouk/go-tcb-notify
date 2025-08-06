@@ -45,8 +45,9 @@ func main() {
 		logrus.Fatal("Failed to run database migrations:", err)
 	}
 
-	// Initialize services
-	tcbFetcher := services.NewTCBFetcher(cfg, db)
+	// Initialize services with proper dependency injection
+	fmspcService := services.NewFMSPCService(cfg, db)
+	tcbFetcher := services.NewTCBFetcher(cfg, db, fmspcService)
 	quoteChecker := services.NewQuoteChecker(cfg, db)
 	alertPublisher := services.NewAlertPublisher(cfg)
 
@@ -54,11 +55,17 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Initial FMSPC fetch on startup
+	logrus.Info("Performing initial FMSPC fetch...")
+	if err := fmspcService.FetchAndStoreAllFMSPCs(ctx); err != nil {
+		logrus.WithError(err).Warn("Failed to fetch FMSPCs on startup, will retry during TCB checks")
+	}
+
 	go tcbFetcher.Start(ctx)
 	go quoteChecker.Start(ctx)
 
-	// Start HTTP server
-	srv := server.New(cfg, db, tcbFetcher, quoteChecker, alertPublisher)
+	// Start HTTP server with all services
+	srv := server.New(cfg, db, tcbFetcher, quoteChecker, alertPublisher, fmspcService)
 
 	// Graceful shutdown
 	c := make(chan os.Signal, 1)
