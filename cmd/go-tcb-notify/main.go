@@ -47,9 +47,15 @@ func main() {
 
 	// Initialize services with proper dependency injection
 	fmspcService := services.NewFMSPCService(cfg, db)
+
+	registryService, err := services.NewRegistryService(cfg, db)
+	if err != nil {
+		logrus.Fatal("Failed to initialize registry service:", err)
+	}
+
+	alertPublisher := services.NewAlertPublisher(cfg, db)
 	tcbFetcher := services.NewTCBFetcher(cfg, db, fmspcService)
-	quoteChecker := services.NewQuoteChecker(cfg, db)
-	alertPublisher := services.NewAlertPublisher(cfg)
+	quoteChecker := services.NewQuoteChecker(cfg, db, registryService, alertPublisher)
 
 	// Start background services
 	ctx, cancel := context.WithCancel(context.Background())
@@ -61,11 +67,12 @@ func main() {
 		logrus.WithError(err).Warn("Failed to fetch FMSPCs on startup, will retry during TCB checks")
 	}
 
+	// Start background services
 	go tcbFetcher.Start(ctx)
 	go quoteChecker.Start(ctx)
 
 	// Start HTTP server with all services
-	srv := server.New(cfg, db, tcbFetcher, quoteChecker, alertPublisher, fmspcService)
+	srv := server.New(cfg, db, tcbFetcher, quoteChecker, alertPublisher, fmspcService, registryService)
 
 	// Graceful shutdown
 	c := make(chan os.Signal, 1)

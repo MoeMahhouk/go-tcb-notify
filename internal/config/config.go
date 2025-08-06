@@ -8,74 +8,68 @@ import (
 
 type Config struct {
 	// Server configuration
-	Port     string
-	LogLevel string
-
-	// Database configuration
-	DatabaseURL string
-
-	// Ethereum configuration
-	RPCURL          string
-	RegistryAddress string
+	Port           string
+	LogLevel       string
+	DatabaseURL    string
+	MetricsEnabled bool
 
 	// Intel PCS configuration
 	PCSBaseURL string
 
-	// Monitoring intervals
-	TCBCheckInterval   time.Duration
+	// Ethereum configuration
+	EthereumRPCURL  string
+	RegistryAddress string
+	StartBlock      uint64
+	BatchSize       uint64
+
+	// Webhook configuration
+	WebhookURL     string
+	WebhookTimeout time.Duration
+
+	// Service intervals
+	TCBFetchInterval   time.Duration
 	QuoteCheckInterval time.Duration
 
-	// Alerting configuration
-	AlertWebhookURL string
-
-	// Metrics configuration
-	MetricsEnabled bool
+	// Alert configuration
+	AlertCooldown time.Duration
 }
 
 func Load() (*Config, error) {
-	cfg := &Config{
-		Port:     getEnv("PORT", "8080"),
-		LogLevel: getEnv("LOG_LEVEL", "info"),
+	tcbFetchInterval, _ := time.ParseDuration(getEnvOrDefault("TCB_FETCH_INTERVAL", "1h"))
+	quoteCheckInterval, _ := time.ParseDuration(getEnvOrDefault("QUOTE_CHECK_INTERVAL", "30m"))
+	webhookTimeout, _ := time.ParseDuration(getEnvOrDefault("WEBHOOK_TIMEOUT", "30s"))
+	alertCooldown, _ := time.ParseDuration(getEnvOrDefault("ALERT_COOLDOWN", "1h"))
 
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://user:password@localhost/go_tcb_notify?sslmode=disable"),
+	startBlock, _ := strconv.ParseUint(getEnvOrDefault("START_BLOCK", "0"), 10, 64)
+	batchSize, _ := strconv.ParseUint(getEnvOrDefault("BATCH_SIZE", "1000"), 10, 64)
 
-		RPCURL:          getEnv("RPC_URL", "http://localhost:8545"),
-		RegistryAddress: getEnv("REGISTRY_ADDRESS", ""),
+	metricsEnabled, _ := strconv.ParseBool(getEnvOrDefault("METRICS_ENABLED", "true"))
 
-		PCSBaseURL: getEnv("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
+	return &Config{
+		Port:           getEnvOrDefault("PORT", "8080"),
+		LogLevel:       getEnvOrDefault("LOG_LEVEL", "info"),
+		DatabaseURL:    getEnvOrDefault("DATABASE_URL", "postgres://localhost/tcb_notify?sslmode=disable"),
+		MetricsEnabled: metricsEnabled,
 
-		TCBCheckInterval:   getDurationEnv("TCB_CHECK_INTERVAL", time.Hour),
-		QuoteCheckInterval: getDurationEnv("QUOTE_CHECK_INTERVAL", 5*time.Minute),
+		PCSBaseURL: getEnvOrDefault("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
 
-		AlertWebhookURL: getEnv("ALERT_WEBHOOK_URL", ""),
+		EthereumRPCURL:  getEnvOrDefault("ETHEREUM_RPC_URL", ""),
+		RegistryAddress: getEnvOrDefault("REGISTRY_ADDRESS", ""),
+		StartBlock:      startBlock,
+		BatchSize:       batchSize,
 
-		MetricsEnabled: getBoolEnv("METRICS_ENABLED", true),
-	}
+		WebhookURL:     getEnvOrDefault("WEBHOOK_URL", ""),
+		WebhookTimeout: webhookTimeout,
 
-	return cfg, nil
+		TCBFetchInterval:   tcbFetchInterval,
+		QuoteCheckInterval: quoteCheckInterval,
+		AlertCooldown:      alertCooldown,
+	}, nil
 }
 
-func getEnv(key, defaultValue string) string {
+func getEnvOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
-	}
-	return defaultValue
-}
-
-func getDurationEnv(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-	}
-	return defaultValue
-}
-
-func getBoolEnv(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		if b, err := strconv.ParseBool(value); err == nil {
-			return b
-		}
 	}
 	return defaultValue
 }

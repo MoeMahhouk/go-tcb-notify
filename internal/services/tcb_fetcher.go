@@ -36,7 +36,7 @@ func (f *TCBFetcher) Start(ctx context.Context) {
 	logrus.Info("Starting TCB fetcher service")
 
 	// Use the interval from config
-	interval := f.config.TCBCheckInterval
+	interval := f.config.TCBFetchInterval
 	if interval == 0 {
 		logrus.Warn("TCB check interval is zero, using default 1h")
 		interval = time.Hour
