@@ -1,3 +1,4 @@
+// internal/services/registry_service.go
 package services
 
 import (
@@ -11,24 +12,27 @@ import (
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdx"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/sirupsen/logrus"
 )
 
 type RegistryService struct {
-	config    *config.Config
-	db        *sql.DB
-	ethClient *ethclient.Client
-	client    *http.Client
+	config      *config.Config
+	db          *sql.DB
+	ethClient   *ethclient.Client
+	client      *http.Client
+	quoteParser *tdx.QuoteParser
 }
 
 type QuoteRegisteredEvent struct {
-	Address     string `json:"address"`
-	QuoteData   string `json:"quoteData"`
-	WorkloadID  string `json:"workloadId"`
-	BlockNumber uint64 `json:"blockNumber"`
+	Address     common.Address `json:"address"`
+	QuoteData   []byte         `json:"quoteData"`
+	WorkloadID  string         `json:"workloadId"`
+	BlockNumber uint64         `json:"blockNumber"`
 }
 
 func NewRegistryService(cfg *config.Config, db *sql.DB) (*RegistryService, error) {
@@ -49,6 +53,7 @@ func NewRegistryService(cfg *config.Config, db *sql.DB) (*RegistryService, error
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		quoteParser: tdx.NewQuoteParser(),
 	}, nil
 }
 
@@ -104,13 +109,12 @@ func (r *RegistryService) fetchQuotesFromEthereum(ctx context.Context) error {
 
 func (r *RegistryService) processBlockRange(ctx context.Context, start, end uint64) error {
 	// Query for QuoteRegistered events
+	// Note: You'll need to get the actual event signature from your contract
 	query := ethereum.FilterQuery{
 		FromBlock: big.NewInt(int64(start)),
 		ToBlock:   big.NewInt(int64(end)),
 		Addresses: []common.Address{common.HexToAddress(r.config.RegistryAddress)},
-		Topics: [][]common.Hash{
-			{common.HexToHash("0x1234567890abcdef")}, // QuoteRegistered event signature
-		},
+		// Topics would include the event signature for QuoteRegistered
 	}
 
 	logs, err := r.ethClient.FilterLogs(ctx, query)
@@ -119,8 +123,16 @@ func (r *RegistryService) processBlockRange(ctx context.Context, start, end uint
 	}
 
 	for _, log := range logs {
-		if err := r.processQuoteEvent(log.Data, log.TxHash.Hex()); err != nil {
-			logrus.WithError(err).WithField("txHash", log.TxHash.Hex()).Error("Failed to process quote event")
+		// Parse the event based on your contract's ABI
+		// This is a simplified example - you'll need to decode based on your actual event structure
+		event, err := r.parseQuoteRegisteredEvent(&log)
+		if err != nil {
+			logrus.WithError(err).WithField("txHash", log.TxHash.Hex()).Error("Failed to parse event")
+			continue
+		}
+
+		if err := r.processQuoteEvent(event); err != nil {
+			logrus.WithError(err).WithField("address", event.Address.Hex()).Error("Failed to process quote event")
 		}
 	}
 
@@ -133,53 +145,69 @@ func (r *RegistryService) processBlockRange(ctx context.Context, start, end uint
 	return nil
 }
 
-func (r *RegistryService) processQuoteEvent(data []byte, txHash string) error {
-	// Parse the event data to extract quote information
-	// This would decode the actual event structure from your registry contract
+func (r *RegistryService) parseQuoteRegisteredEvent(log *types.Log) (*QuoteRegisteredEvent, error) {
+	// This is where you would decode the log data based on your contract's ABI
+	// For now, returning a placeholder
 
-	// For now, we'll simulate the parsing
-	// quoteData := hex.EncodeToString(data)
+	// You would typically use go-ethereum's abi package to decode the event
+	// Example:
+	// contractAbi, _ := abi.JSON(strings.NewReader(YourContractABI))
+	// event := new(QuoteRegisteredEvent)
+	// err := contractAbi.UnpackIntoInterface(event, "QuoteRegistered", log.Data)
 
-	// Extract FMSPC and TCB components from quote
-	fmspc, tcbComponents, err := r.parseQuoteData(data)
+	// For now, we'll extract basic information from the log
+	// Assuming the address is in the first topic after the event signature
+	var address common.Address
+	if len(log.Topics) > 1 {
+		address = common.BytesToAddress(log.Topics[1].Bytes())
+	}
+
+	return &QuoteRegisteredEvent{
+		Address:     address,
+		QuoteData:   log.Data,
+		WorkloadID:  "", // Extract from event data
+		BlockNumber: log.BlockNumber,
+	}, nil
+}
+
+func (r *RegistryService) processQuoteEvent(event *QuoteRegisteredEvent) error {
+	// Parse the quote data using the TDX quote parser
+	parsedQuote, err := r.quoteParser.ParseQuote(event.QuoteData)
 	if err != nil {
 		return fmt.Errorf("failed to parse quote data: %w", err)
 	}
 
-	// Store the monitored quote
-	quote := &models.MonitoredQuote{
-		Address:       txHash, // Using txHash as address for now
-		QuoteData:     data,
-		WorkloadID:    "", // Extract from quote
-		FMSPC:         fmspc,
-		TCBComponents: tcbComponents,
-		CurrentStatus: "UpToDate",
-		NeedsUpdate:   false,
-		LastChecked:   time.Now(),
+	// Extract FMSPC from the parsed quote
+	fmspc := parsedQuote.FMSPC
+	if fmspc == "" {
+		logrus.WithField("address", event.Address.Hex()).Warn("No FMSPC found in quote, will need to determine later")
 	}
 
-	return r.storeMonitoredQuote(quote)
-}
-
-func (r *RegistryService) parseQuoteData(data []byte) (string, json.RawMessage, error) {
-	// This would use the go-tdx-guest library to parse the quote
-	// For now, return placeholder values
-
-	fmspc := "00906EA10000" // Example FMSPC
-
-	// Example TCB components structure
+	// Convert TCB components to JSON
 	tcbComponents := map[string]interface{}{
-		"sgxTcbComponents": make([]int, 16),
-		"tdxTcbComponents": make([]int, 16),
-		"pcesvn":           0,
+		"sgxTcbComponents": parsedQuote.TCBComponents.SGXComponents,
+		"tdxTcbComponents": parsedQuote.TCBComponents.TDXComponents,
+		"pcesvn":           parsedQuote.TCBComponents.PCESVN,
 	}
 
 	tcbBytes, err := json.Marshal(tcbComponents)
 	if err != nil {
-		return "", nil, err
+		return fmt.Errorf("failed to marshal TCB components: %w", err)
 	}
 
-	return fmspc, json.RawMessage(tcbBytes), nil
+	// Store the monitored quote
+	quote := &models.MonitoredQuote{
+		Address:       event.Address.Hex(),
+		QuoteData:     event.QuoteData,
+		WorkloadID:    event.WorkloadID,
+		FMSPC:         fmspc,
+		TCBComponents: json.RawMessage(tcbBytes),
+		CurrentStatus: "Unknown", // Will be determined during verification
+		NeedsUpdate:   true,      // Mark for initial verification
+		LastChecked:   time.Now(),
+	}
+
+	return r.storeMonitoredQuote(quote)
 }
 
 func (r *RegistryService) storeMonitoredQuote(quote *models.MonitoredQuote) error {
@@ -191,8 +219,12 @@ func (r *RegistryService) storeMonitoredQuote(quote *models.MonitoredQuote) erro
 		DO UPDATE SET 
 			quote_data = EXCLUDED.quote_data,
 			workload_id = EXCLUDED.workload_id,
-			fmspc = EXCLUDED.fmspc,
+			fmspc = CASE 
+				WHEN EXCLUDED.fmspc != '' THEN EXCLUDED.fmspc 
+				ELSE monitored_tdx_quotes.fmspc 
+			END,
 			tcb_components = EXCLUDED.tcb_components,
+			needs_update = true,
 			last_checked = EXCLUDED.last_checked`
 
 	_, err := r.db.Exec(query,
@@ -210,16 +242,40 @@ func (r *RegistryService) storeMonitoredQuote(quote *models.MonitoredQuote) erro
 		return fmt.Errorf("failed to store monitored quote: %w", err)
 	}
 
-	logrus.WithField("address", quote.Address).Debug("Stored monitored quote")
+	logrus.WithFields(logrus.Fields{
+		"address": quote.Address,
+		"fmspc":   quote.FMSPC,
+	}).Debug("Stored monitored quote")
+
 	return nil
 }
 
 func (r *RegistryService) fetchQuotesFromAPI(ctx context.Context) error {
-	// Fallback to direct API calls if Ethereum RPC is not available
+	// This would be the implementation for fetching quotes via REST API
+	// if Ethereum RPC is not available
+
 	logrus.Info("Fetching quotes from registry API...")
 
-	// Implementation would depend on your registry's API structure
-	// This is a placeholder for the API-based approach
+	// Example API endpoint - adjust based on your actual API
+	apiURL := fmt.Sprintf("%s/api/quotes", r.config.RegistryAddress)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch quotes: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	// Parse response and process quotes
+	// This would depend on your API response format
 
 	return nil
 }

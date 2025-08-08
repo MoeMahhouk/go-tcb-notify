@@ -9,6 +9,7 @@ import (
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdx"
 	"github.com/sirupsen/logrus"
 )
 
@@ -18,6 +19,7 @@ type QuoteChecker struct {
 	registryService *RegistryService
 	alertPublisher  *AlertPublisher
 	tcbVerifier     *TCBVerifier
+	quoteParser     *tdx.QuoteParser
 }
 
 func NewQuoteChecker(cfg *config.Config, db *sql.DB, registryService *RegistryService, alertPublisher *AlertPublisher) *QuoteChecker {
@@ -27,6 +29,7 @@ func NewQuoteChecker(cfg *config.Config, db *sql.DB, registryService *RegistrySe
 		registryService: registryService,
 		alertPublisher:  alertPublisher,
 		tcbVerifier:     NewTCBVerifier(db),
+		quoteParser:     tdx.NewQuoteParser(),
 	}
 }
 
@@ -84,20 +87,52 @@ func (c *QuoteChecker) checkMonitoredQuotes(ctx context.Context) error {
 }
 
 func (c *QuoteChecker) verifyQuote(ctx context.Context, quote *models.MonitoredQuote) error {
-	// Get current TCB info for the quote's FMSPC
-	tcbInfo, err := c.getCurrentTCBInfo(quote.FMSPC)
+	// Parse the TDX quote using go-tdx-guest library
+	parsedQuote, err := c.quoteParser.ParseQuote(quote.QuoteData)
 	if err != nil {
-		return fmt.Errorf("failed to get TCB info for FMSPC %s: %w", quote.FMSPC, err)
+		return fmt.Errorf("failed to parse TDX quote: %w", err)
 	}
 
-	// Parse quote's TCB components
-	var quoteTCB QuoteTCBComponents
-	if err := json.Unmarshal(quote.TCBComponents, &quoteTCB); err != nil {
-		return fmt.Errorf("failed to parse quote TCB components: %w", err)
+	// Extract FMSPC from the parsed quote
+	fmspc := parsedQuote.FMSPC
+	if fmspc == "" {
+		return fmt.Errorf("no FMSPC found in quote")
 	}
+
+	// Update the quote's FMSPC if it's different
+	if quote.FMSPC != fmspc {
+		quote.FMSPC = fmspc
+		if err := c.updateQuoteFMSPC(quote.Address, fmspc); err != nil {
+			logrus.WithError(err).Error("Failed to update quote FMSPC")
+		}
+	}
+
+	// Get current TCB info for the quote's FMSPC
+	tcbInfo, err := c.getCurrentTCBInfo(fmspc)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			logrus.WithField("fmspc", fmspc).Warn("No TCB info found for FMSPC, skipping verification")
+			return nil
+		}
+		return fmt.Errorf("failed to get TCB info for FMSPC %s: %w", fmspc, err)
+	}
+
+	// Extract TCB components from parsed quote
+	quoteTCB := &QuoteTCBComponents{
+		SGXTCBComponents: parsedQuote.TCBComponents.SGXComponents,
+		TDXTCBComponents: parsedQuote.TCBComponents.TDXComponents,
+		PCESVN:           int(parsedQuote.TCBComponents.PCESVN),
+	}
+
+	// Store the extracted TCB components
+	tcbComponentsJSON, err := json.Marshal(quoteTCB)
+	if err != nil {
+		return fmt.Errorf("failed to marshal TCB components: %w", err)
+	}
+	quote.TCBComponents = tcbComponentsJSON
 
 	// Verify quote against current TCB levels
-	result, err := c.tcbVerifier.VerifyQuote(&quoteTCB, tcbInfo)
+	result, err := c.tcbVerifier.VerifyQuote(quoteTCB, tcbInfo)
 	if err != nil {
 		return fmt.Errorf("failed to verify quote: %w", err)
 	}
@@ -172,6 +207,15 @@ func (c *QuoteChecker) getCurrentTCBInfo(fmspc string) (*models.TCBInfo, error) 
 	return tcbInfo, nil
 }
 
+func (c *QuoteChecker) updateQuoteFMSPC(address, fmspc string) error {
+	_, err := c.db.Exec(`
+		UPDATE monitored_tdx_quotes 
+		SET fmspc = $1
+		WHERE address = $2`,
+		fmspc, address)
+	return err
+}
+
 func (c *QuoteChecker) updateQuoteStatus(address, status string, needsUpdate bool) error {
 	_, err := c.db.Exec(`
 		UPDATE monitored_tdx_quotes 
@@ -196,6 +240,11 @@ func (c *QuoteChecker) shouldTriggerAlert(previousStatus, newStatus, address str
 		address).Scan(&lastAlert)
 
 	if err == nil && time.Since(lastAlert) < c.config.AlertCooldown {
+		logrus.WithFields(logrus.Fields{
+			"address":   address,
+			"lastAlert": lastAlert,
+			"cooldown":  c.config.AlertCooldown,
+		}).Debug("Alert still in cooldown period")
 		return false
 	}
 
@@ -230,7 +279,7 @@ func (c *QuoteChecker) getSuggestedAction(status string) string {
 
 // QuoteTCBComponents represents the TCB components extracted from a quote
 type QuoteTCBComponents struct {
-	SGXTCBComponents []int `json:"sgxTcbComponents"`
-	TDXTCBComponents []int `json:"tdxTcbComponents"`
-	PCESVN           int   `json:"pcesvn"`
+	SGXTCBComponents []uint8 `json:"sgxTcbComponents"`
+	TDXTCBComponents []uint8 `json:"tdxTcbComponents"`
+	PCESVN           int     `json:"pcesvn"`
 }

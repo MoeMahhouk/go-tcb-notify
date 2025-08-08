@@ -8,6 +8,7 @@ import (
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	"github.com/MoeMahhouk/go-tcb-notify/internal/services"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
@@ -209,17 +210,7 @@ func (s *Server) getCurrentTCBInfo(fmspc string) (interface{}, error) {
 		ORDER BY tcb_evaluation_data_number DESC 
 		LIMIT 1`
 
-	var result struct {
-		FMSPC                   string      `json:"fmspc"`
-		Version                 int         `json:"version"`
-		IssueDate               string      `json:"issueDate"`
-		NextUpdate              string      `json:"nextUpdate"`
-		TCBType                 int         `json:"tcbType"`
-		TCBEvaluationDataNumber int         `json:"tcbEvaluationDataNumber"`
-		TCBLevels               interface{} `json:"tcbLevels"`
-		RawResponse             interface{} `json:"rawResponse"`
-		CreatedAt               string      `json:"createdAt"`
-	}
+	var result models.TCBInfo
 
 	var tcbLevelsBytes, rawResponseBytes []byte
 	err := s.db.QueryRow(query, fmspc).Scan(
