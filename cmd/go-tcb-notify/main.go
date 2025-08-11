@@ -61,7 +61,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initial FMSPC fetch on startup
+	// Warm FMSPC list (FK for quotes)
 	logrus.Info("Performing initial FMSPC fetch...")
 	if err := fmspcService.FetchAndStoreAllFMSPCs(ctx); err != nil {
 		logrus.WithError(err).Warn("Failed to fetch FMSPCs on startup, will retry during TCB checks")
@@ -74,18 +74,17 @@ func main() {
 	// Start HTTP server with all services
 	srv := server.New(cfg, db, tcbFetcher, quoteChecker, alertPublisher, fmspcService, registryService)
 
-	// Graceful shutdown
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	// HTTP serve + shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logrus.Fatal("Server failed to start:", err)
 		}
 	}()
-
 	logrus.Info("Service started successfully")
-	<-c
+	<-stop
 
 	logrus.Info("Shutting down service...")
 	cancel()
@@ -96,13 +95,11 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		logrus.Error("Server forced to shutdown:", err)
 	}
-
 	logrus.Info("Service stopped")
 }
 
 func setupLogging(level string) {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
-
 	switch level {
 	case "debug":
 		logrus.SetLevel(logrus.DebugLevel)

@@ -13,16 +13,19 @@ type Config struct {
 	DatabaseURL    string
 	MetricsEnabled bool
 
-	// Intel PCS configuration
+	// Intel PCS
 	PCSBaseURL string
 
-	// Ethereum configuration
-	EthereumRPCURL  string
-	RegistryAddress string
-	StartBlock      uint64
-	BatchSize       uint64
+	// Ethereum / Registry
+	EthereumRPCURL    string
+	RegistryAddress   string
+	RegistryABIPath   string
+	RegistryEventName string
+	StartBlock        uint64
+	BatchSize         uint64
+	Prod              bool
 
-	// Webhook configuration
+	// Webhook
 	WebhookURL     string
 	WebhookTimeout time.Duration
 
@@ -30,35 +33,44 @@ type Config struct {
 	TCBFetchInterval   time.Duration
 	QuoteCheckInterval time.Duration
 
-	// Alert configuration
+	// Alerts
 	AlertCooldown time.Duration
 }
 
 func Load() (*Config, error) {
-	tcbFetchInterval, _ := time.ParseDuration(getEnvOrDefault("TCB_FETCH_INTERVAL", "1h"))
-	quoteCheckInterval, _ := time.ParseDuration(getEnvOrDefault("QUOTE_CHECK_INTERVAL", "30m"))
-	webhookTimeout, _ := time.ParseDuration(getEnvOrDefault("WEBHOOK_TIMEOUT", "30s"))
-	alertCooldown, _ := time.ParseDuration(getEnvOrDefault("ALERT_COOLDOWN", "1h"))
+	// durations
+	tcbFetchInterval, _ := time.ParseDuration(envFirst("TCB_FETCH_INTERVAL", "TCB_CHECK_INTERVAL", "1h"))
+	quoteCheckInterval, _ := time.ParseDuration(envFirst("QUOTE_CHECK_INTERVAL", "30m"))
+	webhookTimeout, _ := time.ParseDuration(envFirst("WEBHOOK_TIMEOUT", "30s"))
+	alertCooldown, _ := time.ParseDuration(envFirst("ALERT_COOLDOWN", "1h"))
 
-	startBlock, _ := strconv.ParseUint(getEnvOrDefault("START_BLOCK", "0"), 10, 64)
-	batchSize, _ := strconv.ParseUint(getEnvOrDefault("BATCH_SIZE", "1000"), 10, 64)
+	// numeric
+	startBlock, _ := strconv.ParseUint(envFirst("START_BLOCK", "0"), 10, 64)
+	batchSize, _ := strconv.ParseUint(envFirst("BATCH_SIZE", "1000"), 10, 64)
 
-	metricsEnabled, _ := strconv.ParseBool(getEnvOrDefault("METRICS_ENABLED", "true"))
+	// bools
+	metricsEnabled, _ := strconv.ParseBool(envFirst("METRICS_ENABLED", "true"))
+	prodFlag, _ := strconv.ParseBool(envFirst("PROD", "false"))
 
 	return &Config{
-		Port:           getEnvOrDefault("PORT", "8080"),
-		LogLevel:       getEnvOrDefault("LOG_LEVEL", "info"),
-		DatabaseURL:    getEnvOrDefault("DATABASE_URL", "postgres://localhost/tcb_notify?sslmode=disable"),
+		Port:           envFirst("PORT", "8080"),
+		LogLevel:       envFirst("LOG_LEVEL", "info"),
+		DatabaseURL:    envFirst("DATABASE_URL", "postgres://localhost/tcb_notify?sslmode=disable"),
 		MetricsEnabled: metricsEnabled,
 
-		PCSBaseURL: getEnvOrDefault("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
+		PCSBaseURL: envFirst("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
 
-		EthereumRPCURL:  getEnvOrDefault("ETHEREUM_RPC_URL", ""),
-		RegistryAddress: getEnvOrDefault("REGISTRY_ADDRESS", ""),
-		StartBlock:      startBlock,
-		BatchSize:       batchSize,
+		// accept ETHEREUM_RPC_URL or RPC_URL
+		EthereumRPCURL:    envFirst("ETHEREUM_RPC_URL", "RPC_URL", ""),
+		RegistryAddress:   envFirst("REGISTRY_ADDRESS", ""),
+		RegistryABIPath:   envFirst("REGISTRY_ABI_PATH", ""),
+		RegistryEventName: envFirst("REGISTRY_EVENT_NAME", "TEEServiceRegistered"),
+		StartBlock:        startBlock,
+		BatchSize:         batchSize,
+		Prod:              prodFlag,
 
-		WebhookURL:     getEnvOrDefault("WEBHOOK_URL", ""),
+		// accept WEBHOOK_URL or ALERT_WEBHOOK_URL
+		WebhookURL:     envFirst("WEBHOOK_URL", "ALERT_WEBHOOK_URL", ""),
 		WebhookTimeout: webhookTimeout,
 
 		TCBFetchInterval:   tcbFetchInterval,
@@ -67,9 +79,11 @@ func Load() (*Config, error) {
 	}, nil
 }
 
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func envFirst(keys ...string) string {
+	for i := 0; i < len(keys); i++ {
+		if val := os.Getenv(keys[i]); val != "" {
+			return val
+		}
 	}
-	return defaultValue
+	return keys[len(keys)-1] // last is default/fallback literal
 }

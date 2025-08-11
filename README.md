@@ -29,9 +29,15 @@ The service consists of four core components:
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.24+
 - PostgreSQL 12+
-- Docker (optional)
+- (Optional) Docker / Docker Compose
+- An Ethereum RPC endpoint with access to the chain your registry is on
+- **ABI JSON** for your deployed Flashtestation Registry contract
+
+### Getting the ABI
+
+Build your contracts with Foundry (`forge build`). Copy the registry artifact to this repo and adjust the right path.
 
 ### Installation
 

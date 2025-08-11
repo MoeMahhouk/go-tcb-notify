@@ -22,6 +22,13 @@ type QuoteChecker struct {
 	quoteParser     *tdx.QuoteParser
 }
 
+// QuoteTCBComponents represents the TCB components extracted from a quote
+type QuoteTCBComponents struct {
+	SGXTCBComponents [16]uint8 `json:"sgxTcbComponents"`
+	TDXTCBComponents [16]uint8 `json:"tdxTcbComponents"`
+	PCESVN           int       `json:"pcesvn"`
+}
+
 func NewQuoteChecker(cfg *config.Config, db *sql.DB, registryService *RegistryService, alertPublisher *AlertPublisher) *QuoteChecker {
 	return &QuoteChecker{
 		config:          cfg,
@@ -275,11 +282,4 @@ func (c *QuoteChecker) getSuggestedAction(status string) string {
 	default:
 		return "Monitor for updates"
 	}
-}
-
-// QuoteTCBComponents represents the TCB components extracted from a quote
-type QuoteTCBComponents struct {
-	SGXTCBComponents []uint8 `json:"sgxTcbComponents"`
-	TDXTCBComponents []uint8 `json:"tdxTcbComponents"`
-	PCESVN           int     `json:"pcesvn"`
 }
