@@ -1,215 +1,99 @@
-# go-tcb-notify
+# go-tcb-notify (ETL/Pipeline Edition)
 
-A monitoring and notification service for Intel TDX TCB changes in the Flashtestation protocol ecosystem.
+A small set of Go services that ingest TDX attestation registrations from the **FlashtestationRegistry** smart contract, fetch Intel **TDX TCB** information from the public PCS API, and evaluate quotes against the latest TCB levels. Results are written to **ClickHouse** for downstream consumers (dashboards, alert workers, etc).
 
-## Overview
+> This refactor removes direct webhooks and moves to a storage‑centric pipeline. Each step is its own process.
 
-go-tcb-notify watches for Intel TDX Trusted Computing Base (TCB) updates and identifies TDX attestations that need revalidation. The service ensures that the Flashtestation registry maintains only TDX attestations that meet current Intel security requirements.
+## Components
 
-## Architecture
+- **ingest-registry**: scans Ethereum logs from `FlashtestationRegistry` and stores raw events in ClickHouse.
+- **fetch-pcs**: periodically fetches FMSPCs and TDX TCB info from Intel PCS and stores raw JSON.
+- **evaluate-quotes**: computes each address’s latest status by parsing quotes and comparing against the newest TCB.
 
-The service consists of four core components:
+## Why ClickHouse?
 
-1. **TDX TCB Fetcher** - Monitors Intel PCS for TCB information updates
-2. **TDX Quote Checker** - Identifies quotes impacted by TCB changes  
-3. **Alert Publisher** - Notifies DevOps systems about impacted quotes
-4. **Metrics Exporter** - Exports Prometheus metrics for monitoring
+ClickHouse offers fast, columnar analytics and easy upserts with `ReplacingMergeTree`. We keep raw, append‑only logs and derive “latest” views using simple queries (`argMax`) or periodic materialization.
 
-## Features
+## Build
 
-- Monitors Intel TDX PCS API for TCB updates
-- Compares quotes against new TCB requirements
-- Sends detailed alerts with advisory IDs and suggested actions
-- PostgreSQL storage for audit trails
-- Prometheus metrics integration
-- Health check endpoints
-- Docker support
-
-## Getting Started
-
-### Prerequisites
-
-- Go 1.24+
-- PostgreSQL 12+
-- (Optional) Docker / Docker Compose
-- An Ethereum RPC endpoint with access to the chain your registry is on
-- **ABI JSON** for your deployed Flashtestation Registry contract
-
-### Getting the ABI
-
-Build your contracts with Foundry (`forge build`). Copy the registry artifact to this repo and adjust the right path.
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/MoeMahhouk/go-tcb-notify.git
-cd go-tcb-notify
-```
-
-2. Install dependencies:
-```bash
-go mod download
-```
-
-3. Set up environment variables:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-4. Run database migrations:
-```bash
-go run cmd/go-tcb-notify/main.go
-```
-
-### Configuration
-
-Environment variables:
+- Requires Go **1.24+**, `abigen`, `forge`, and `jq` if you want to (re)generate bindings.
 
 ```bash
-# Server
-PORT=8080
-LOG_LEVEL=info
+# generate bindings from your flashtestations repo (submodule or sibling)
+make bindings
 
-# Database
-DATABASE_URL=postgres://user:pass@localhost/go_tcb_notify?sslmode=disable
-
-# Ethereum
-RPC_URL=http://localhost:8545
-REGISTRY_ADDRESS=0x...
-
-# Intel PCS
-PCS_BASE_URL=https://api.trustedservices.intel.com
-
-# Monitoring
-TCB_CHECK_INTERVAL=1h
-QUOTE_CHECK_INTERVAL=5m
-
-# Alerting
-ALERT_WEBHOOK_URL=https://webhook.site/...
-
-# Metrics
-METRICS_ENABLED=true
+# build binaries
+make build
 ```
 
-### Running with Docker
+The binaries will be placed in `./bin`.
+
+## Run (Docker)
 
 ```bash
-docker-compose up -d
+docker compose up --build -d
 ```
 
-## API Endpoints
+This starts ClickHouse and runs all three processes.
 
-### Health Checks
+### Services & env
 
-- `GET /health` - Service health status
-- `GET /ready` - Readiness probe
-- `GET /metrics` - Prometheus metrics
+- **ingest-registry**
+  - `ETHEREUM_RPC_URL` – your RPC (we set the experimental endpoint in compose).
+  - `REGISTRY_ADDRESS` – FlashtestationRegistry address.
+  - `START_BLOCK`, `BATCH_SIZE`, `POLL_INTERVAL` – scan controls.
+- **fetch-pcs**
+  - `PCS_BASE_URL` – defaults to Intel's public PCS (`https://api.trustedservices.intel.com`).
+  - `FMSPC_REFRESH`, `TCB_REFRESH` – how often to refresh lists.
+- **evaluate-quotes**
+  - `EVALUATE_INTERVAL` – evaluation cadence.
 
-### API
+All services read ClickHouse from `CLICKHOUSE_DSN` (e.g. `clickhouse://user:pass@host:9000/db?secure=false`).
 
-- `GET /api/v1/tcb/{fmspc}` - Get TCB information for FMSPC
-- `GET /api/v1/quotes` - List monitored quotes
+> DSN is the simplest approach. The driver also supports programmatic options; we keep all config centralized in `internal/config`.
 
-## Database Schema
+## Database layout
 
-The service uses PostgreSQL with three main tables:
+Created automatically by the services on startup:
 
-- `tdx_tcb_info` - Intel TCB information
-- `monitored_tdx_quotes` - Tracked quotes from registry
-- `alert_history` - Alert audit trail
+- `registry_events_raw` — append‑only on‑chain events:
+  - `contract_address`, `event`, `tee_address`, `quote_hex`, `override`, `block_number`, `log_index`, `tx_hash`, `ts`
+- `registry_quotes_current` — “latest quote per address” view maintained by the evaluator.
+- `tdx_tcb_info` — Intel PCS TCB JSON (versioned by `eval_number`).
+- `tdx_quote_status` — computed status per address over time.
+- `pipeline_state` — last processed block for the registry ingestor.
 
-## Integration
+Using `ReplacingMergeTree` keeps things simple and avoids accidental duplicates during retries.
 
-### With google/go-tdx-guest
+## Bindings from your contracts
 
-The service integrates with the `google/go-tdx-guest` library for:
-
-- TCB information parsing
-- Quote verification
-- Component comparison logic
-
-### With Flashtestation Registry
-
-- Monitors registered TDX quotes
-- Retrieves quote data for verification
-- Identifies impacted attestations
-
-## Monitoring
-
-### Prometheus Metrics
-
-- `tdx_tcb_notify_checks_total` - Total TCB checks performed
-- `tdx_tcb_notify_quotes_impacted` - Current impacted quote count
-- `tdx_tcb_notify_alerts_sent_total` - Total alerts sent
-- `tdx_tcb_notify_api_errors_total` - TDX PCS API error count
-
-### Alerting
-
-Alerts are sent via webhook with the following structure:
-
-```json
-{
-  "severity": "warning",
-  "source": "go-tcb-notify",
-  "timestamp": "2024-01-20T10:30:00Z",
-  "quote": {
-    "address": "0x...",
-    "reason": "TDX TCB status changed",
-    "previousStatus": "UpToDate",
-    "newStatus": "OutOfDate",
-    "workloadId": "0x...",
-    "tcbEvaluationDataNumber": 13,
-    "advisoryIDs": ["INTEL-SA-00586", "INTEL-SA-00615"],
-    "fmspc": "50806F000000",
-    "suggestedAction": "invalidate_attestation"
-  }
-}
-```
-
-## Development
-
-### Building
+We don’t hardcode an ABI. Instead, we generate type‑safe Go bindings from your **flashtestations** repo via `abigen`:
 
 ```bash
-go build -o go-tcb-notify ./cmd/go-tcb-notify
+make bindings
 ```
 
-### Testing
+The target extracts the `.abi` section from the Foundry artifact and writes `internal/registry/bindings/registry.go`.
 
-```bash
-go test ./...
-```
+## Configuration
 
-### Adding New Features
+All env vars are loaded via `internal/config` and shared across commands:
 
-1. Implement in appropriate service package
-2. Add tests
-3. Update configuration if needed
-4. Update documentation
+- ClickHouse: `CLICKHOUSE_DSN` **(preferred)** or `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_SECURE`, `CLICKHOUSE_SKIP_VERIFY`.
+- Ethereum: `ETHEREUM_RPC_URL` (or `RPC_URL`), `REGISTRY_ADDRESS`, `START_BLOCK`, `BATCH_SIZE`, `POLL_INTERVAL`.
+- Intel PCS: `PCS_BASE_URL`, `FMSPC_REFRESH`, `TCB_REFRESH`.
+- Evaluator: `EVALUATE_INTERVAL`.
 
-## Security Considerations
+## Program flow
 
-- PostgreSQL connections use SSL/TLS in production
-- No private keys or sensitive data stored
-- Quote data stored for verification only
-- Intel PCS API uses HTTPS only
+1. **ingest-registry** uses the generated filterer to read:
+   - `TEEServiceRegistered(address addr, bytes quote, bool override)`
+   - `TEEServiceInvalidated(address addr)`
+   and stores them in `registry_events_raw` (with `block_number`, `log_index`, `tx_hash` for provenance & dedup).
+2. **fetch-pcs** reads FMSPC list from `/sgx/certification/v4/fmspcs?platform=all` and for each value fetches `/tdx/certification/v4/tcb?fmspc=…`. It stores the whole JSON document.
+3. **evaluate-quotes** picks the latest quote per address with an `argMax` trick, parses the quote (using your existing `pkg/tdx` utilities), compares components against the latest TCB levels, and writes a status row + the latest quote view.
 
-## Contributing
+## Notes
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-[License information to be added]
-
-## References
-
-- [Flashtestation Specification](https://github.com/flashbots/rollup-boost/blob/main/specs/flashtestations.md)
-- [Intel TDX Documentation](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/documentation.html)
-- [google/go-tdx-guest](https://github.com/google/go-tdx-guest)
+- Leave alerting/automation to downstream consumers watching `tdx_quote_status` (or create a separate alert worker).
+- If you need more normalization later (e.g., expanding TCB levels into columns), ClickHouse can ingest from the raw JSON with JSON functions or use a Materialized View.

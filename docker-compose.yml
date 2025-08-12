@@ -1,50 +1,58 @@
-version: '3.8'
-
 services:
-  go-tcb-notify:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: go-tcb-notify:latest
-    ports:
-      - "8080:8080"
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.6
+    container_name: clickhouse
     environment:
-      - DATABASE_URL=postgres://user:password@postgres:5432/go_tcb_notify?sslmode=disable
-      - RPC_URL=http://ethereum-node:8545
-      - REGISTRY_ADDRESS=0x1234567890123456789012345678901234567890
-      - REGISTRY_ABI_PATH=/abi/FlashtestationRegistry.json
-      - REGISTRY_EVENT_NAME=TEEServiceRegistered
-      - PCS_BASE_URL=https://api.trustedservices.intel.com
-      - TCB_FETCH_INTERVAL=1h
-      - QUOTE_CHECK_INTERVAL=5m
-      - WEBHOOK_URL=https://webhook.site/your-unique-url
-      - LOG_LEVEL=info
-      - METRICS_ENABLED=true
-      - START_BLOCK=0
-      - BATCH_SIZE=1000
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     volumes:
-      - ./abi:/abi:ro
+      - ch_data:/var/lib/clickhouse
+      - ./deploy/clickhouse/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+    ports:
+      - "8123:8123"  # HTTP
+      - "9000:9000"  # Native
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ingest-registry:
+    build: .
     depends_on:
-      postgres:
+      clickhouse:
         condition: service_healthy
+    env_file: .env
+    command: ["/app/ingest-registry"]
     restart: unless-stopped
 
-  postgres:
-    image: postgres:15
-    environment:
-      - POSTGRES_DB=go_tcb_notify
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+  evaluate-quotes:
+    build: .
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    env_file: .env
+    command: ["/app/evaluate-quotes"]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d go_tcb_notify"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
+  fetch-pcs:
+    build: .
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    env_file: .env
+    command: ["/app/fetch-pcs"]
+    restart: "no"
+    
+  validate-quotes:
+    build: .
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    env_file: .env
+    command: ["/app/validate-quotes"]
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
+  ch_data: {}

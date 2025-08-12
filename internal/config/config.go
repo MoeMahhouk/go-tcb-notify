@@ -1,89 +1,150 @@
 package config
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
+type ClickHouse struct {
+	// Native protocol addresses: host:port (comma-separated), e.g. "clickhouse:9000"
+	Addrs       []string
+	Database    string
+	Username    string
+	Password    string
+	DialTimeout time.Duration
+	Compression string // "lz4" or "none"
+	Secure      bool   // enable TLS (rare for native; default false)
+}
+
+type IngestRegistry struct {
+	PollInterval time.Duration
+	BatchBlocks  uint64
+}
+
+type EvaluateQuotes struct {
+	BatchSize int
+}
+
+type PCS struct {
+	BaseURL       string        // e.g. https://api.trustedservices.intel.com
+	APIKey        string        // Ocp-Apim-Subscription-Key (if required)
+	FMSPCs        []string      // comma-separated list in env
+	POLL_INTERVAL time.Duration // e.g. 24h or 1h30m
+}
+
 type Config struct {
-	// Server configuration
-	Port           string
-	LogLevel       string
-	DatabaseURL    string
-	MetricsEnabled bool
+	LogLevel        string
+	RPCURL          string
+	RegistryAddress common.Address
 
-	// Intel PCS
-	PCSBaseURL string
+	ClickHouse     ClickHouse
+	IngestRegistry IngestRegistry
+	EvaluateQuotes EvaluateQuotes
+	PCS            PCS
+}
 
-	// Ethereum / Registry
-	EthereumRPCURL    string
-	RegistryAddress   string
-	RegistryABIPath   string
-	RegistryEventName string
-	StartBlock        uint64
-	BatchSize         uint64
-	Prod              bool
+func getenv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
 
-	// Webhook
-	WebhookURL     string
-	WebhookTimeout time.Duration
+func getDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		d, err := time.ParseDuration(v)
+		if err == nil {
+			return d
+		}
+		log.Printf("WARN: invalid duration %s=%q, using default %s", key, v, def)
+	}
+	return def
+}
 
-	// Service intervals
-	TCBFetchInterval   time.Duration
-	QuoteCheckInterval time.Duration
+func getInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil {
+			return n
+		}
+		log.Printf("WARN: invalid int %s=%q, using default %d", key, v, def)
+	}
+	return def
+}
 
-	// Alerts
-	AlertCooldown time.Duration
+func getBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err == nil {
+			return b
+		}
+		log.Printf("WARN: invalid bool %s=%q, using default %v", key, v, def)
+	}
+	return def
 }
 
 func Load() (*Config, error) {
-	// durations
-	tcbFetchInterval, _ := time.ParseDuration(envFirst("TCB_FETCH_INTERVAL", "TCB_CHECK_INTERVAL", "1h"))
-	quoteCheckInterval, _ := time.ParseDuration(envFirst("QUOTE_CHECK_INTERVAL", "30m"))
-	webhookTimeout, _ := time.ParseDuration(envFirst("WEBHOOK_TIMEOUT", "30s"))
-	alertCooldown, _ := time.ParseDuration(envFirst("ALERT_COOLDOWN", "1h"))
+	// Defaults point to your values so it “just works” until customized.
+	rpcURL := getenv("RPC_URL", "http://experi-proxy-cdzrhzcy6czr-74615020.us-east-2.elb.amazonaws.com/")
+	regAddr := getenv("REGISTRY_ADDRESS", "0x927Ea8b713123744E6E0a92f4417366B0B000dA5")
+	if !common.IsHexAddress(regAddr) {
+		return nil, fmt.Errorf("invalid REGISTRY_ADDRESS: %s", regAddr)
+	}
 
-	// numeric
-	startBlock, _ := strconv.ParseUint(envFirst("START_BLOCK", "0"), 10, 64)
-	batchSize, _ := strconv.ParseUint(envFirst("BATCH_SIZE", "1000"), 10, 64)
+	// ClickHouse (native protocol)
+	chAddrs := strings.Split(getenv("CH_ADDRS", "clickhouse:9000"), ",")
+	for i := range chAddrs {
+		chAddrs[i] = strings.TrimSpace(chAddrs[i])
+	}
+	ch := ClickHouse{
+		Addrs:       chAddrs,
+		Database:    getenv("CH_DATABASE", "go_tcb_notify"),
+		Username:    getenv("CH_USERNAME", "default"),
+		Password:    getenv("CH_PASSWORD", ""),
+		DialTimeout: getDuration("CH_DIAL_TIMEOUT", 5*time.Second),
+		Compression: strings.ToLower(getenv("CH_COMPRESSION", "lz4")),
+		Secure:      getBool("CH_SECURE", false),
+	}
 
-	// bools
-	metricsEnabled, _ := strconv.ParseBool(envFirst("METRICS_ENABLED", "true"))
-	prodFlag, _ := strconv.ParseBool(envFirst("PROD", "false"))
-
-	return &Config{
-		Port:           envFirst("PORT", "8080"),
-		LogLevel:       envFirst("LOG_LEVEL", "info"),
-		DatabaseURL:    envFirst("DATABASE_URL", "postgres://localhost/tcb_notify?sslmode=disable"),
-		MetricsEnabled: metricsEnabled,
-
-		PCSBaseURL: envFirst("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
-
-		// accept ETHEREUM_RPC_URL or RPC_URL
-		EthereumRPCURL:    envFirst("ETHEREUM_RPC_URL", "RPC_URL", ""),
-		RegistryAddress:   envFirst("REGISTRY_ADDRESS", ""),
-		RegistryABIPath:   envFirst("REGISTRY_ABI_PATH", ""),
-		RegistryEventName: envFirst("REGISTRY_EVENT_NAME", "TEEServiceRegistered"),
-		StartBlock:        startBlock,
-		BatchSize:         batchSize,
-		Prod:              prodFlag,
-
-		// accept WEBHOOK_URL or ALERT_WEBHOOK_URL
-		WebhookURL:     envFirst("WEBHOOK_URL", "ALERT_WEBHOOK_URL", ""),
-		WebhookTimeout: webhookTimeout,
-
-		TCBFetchInterval:   tcbFetchInterval,
-		QuoteCheckInterval: quoteCheckInterval,
-		AlertCooldown:      alertCooldown,
-	}, nil
+	cfg := &Config{
+		LogLevel:        getenv("LOG_LEVEL", "info"),
+		RPCURL:          rpcURL,
+		RegistryAddress: common.HexToAddress(regAddr),
+		ClickHouse:      ch,
+		IngestRegistry: IngestRegistry{
+			PollInterval: getDuration("INGEST_POLL_INTERVAL", 15*time.Second),
+			BatchBlocks:  uint64(getInt("INGEST_BATCH_BLOCKS", 2500)),
+		},
+		EvaluateQuotes: EvaluateQuotes{
+			BatchSize: getInt("EVAL_BATCH_SIZE", 500),
+		},
+		PCS: PCS{
+			BaseURL:       getenv("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
+			APIKey:        getenv("PCS_API_KEY", ""),
+			FMSPCs:        parseList(getenv("PCS_FMSPC_LIST", "")),
+			POLL_INTERVAL: getDuration("PCS_POLL_INTERVAL", 24*time.Hour),
+		},
+	}
+	return cfg, nil
 }
 
-func envFirst(keys ...string) string {
-	for i := 0; i < len(keys); i++ {
-		if val := os.Getenv(keys[i]); val != "" {
-			return val
+func parseList(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	items := strings.Split(s, ",")
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		it = strings.TrimSpace(it)
+		if it != "" {
+			out = append(out, it)
 		}
 	}
-	return keys[len(keys)-1] // last is default/fallback literal
+	return out
 }
