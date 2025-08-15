@@ -35,18 +35,18 @@ func main() {
 	}
 
 	// Ethereum client
-	ec, err := ethclient.DialContext(ctx, cfg.RPCURL)
+	ec, err := ethclient.DialContext(ctx, cfg.Ethereum.RPCURL)
 	if err != nil {
 		log.Fatalf("ethclient: %v", err)
 	}
 
-	reg, err := bindings.NewFlashtestationRegistry(cfg.RegistryAddress, ec)
+	reg, err := bindings.NewFlashtestationRegistry(cfg.Ethereum.RegistryAddress, ec)
 	if err != nil {
 		log.Fatalf("registry binding: %v", err)
 	}
 
 	log.Printf("[ingest] start, registry=%s, poll=%s, batch_blocks=%d",
-		cfg.RegistryAddress.Hex(), cfg.IngestRegistry.PollInterval, cfg.IngestRegistry.BatchBlocks)
+		cfg.Ethereum.RegistryAddress.Hex(), cfg.IngestRegistry.PollInterval, cfg.IngestRegistry.BatchBlocks)
 
 	// Last processed checkpoint (block, log index)
 	lastBlock, lastIdx, _ := getOffset(ctx, ch)

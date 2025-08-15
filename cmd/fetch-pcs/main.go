@@ -7,180 +7,537 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/sirupsen/logrus"
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	clickdb "github.com/MoeMahhouk/go-tcb-notify/internal/storage/clickhouse"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/pcs"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdx"
 )
 
+const serviceName = "fetch-pcs"
+
+type PCSFetcher struct {
+	clickhouse clickhouse.Conn
+	httpClient *http.Client
+	config     *config.Config
+	baseURL    string
+}
+
 func main() {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle shutdown gracefully
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		logrus.Info("Shutting down...")
+		cancel()
+	}()
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
 
+	// Setup logging
+	if cfg.Debug {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
+	fetcher, err := NewPCSFetcher(ctx, cfg)
+	if err != nil {
+		log.Fatalf("create fetcher: %v", err)
+	}
+	defer fetcher.Close()
+
+	if err := fetcher.Run(ctx); err != nil && err != context.Canceled {
+		log.Fatalf("fetcher failed: %v", err)
+	}
+}
+
+func NewPCSFetcher(ctx context.Context, cfg *config.Config) (*PCSFetcher, error) {
 	ch, err := clickdb.Open(ctx, &cfg.ClickHouse)
 	if err != nil {
-		log.Fatalf("clickhouse: %v", err)
+		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	baseURL := cfg.PCS.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.trustedservices.intel.com"
+	}
 
-	interval := cfg.PCS.POLL_INTERVAL
+	return &PCSFetcher{
+		clickhouse: ch,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		config:  cfg,
+		baseURL: baseURL,
+	}, nil
+}
 
-	log.Printf("[pcs] starting poller interval=%s base=%s", interval, cfg.PCS.BaseURL)
+func (f *PCSFetcher) Close() error {
+	if f.clickhouse != nil {
+		return f.clickhouse.Close()
+	}
+	return nil
+}
+
+func (f *PCSFetcher) Run(ctx context.Context) error {
+	logrus.WithField("service", serviceName).Info("Starting PCS fetcher")
+
+	// Initial fetch
+	if err := f.fetchAllIntelPCSData(ctx); err != nil {
+		logrus.WithError(err).Error("Initial Intel PCS fetch failed")
+	}
+
+	// Set up periodic fetch
+	ticker := time.NewTicker(f.config.PCS.POLL_INTERVAL)
+	defer ticker.Stop()
 
 	for {
-		fmspcs := cfg.PCS.FMSPCs
-		if len(fmspcs) == 0 {
-			// Best-effort discovery; some deployments require 'all'
-			list, err := fetchFMSPCList(ctx, client, cfg, "all")
-			if err != nil {
-				log.Printf("WARN discover fmspcs: %v", err)
-			} else {
-				fmspcs = list
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := f.fetchAllIntelPCSData(ctx); err != nil {
+				logrus.WithError(err).Error("Periodic Intel PCS fetch failed")
 			}
 		}
-
-		for _, fmspc := range fmspcs {
-			if err := fetchAndStore(ctx, client, ch, cfg, fmspc); err != nil {
-				log.Printf("WARN fetch FMSPC %s: %v", fmspc, err)
-			} else {
-				log.Printf("[pcs] updated TCB info for %s", fmspc)
-			}
-		}
-
-		time.Sleep(interval)
 	}
 }
 
-func fetchFMSPCList(ctx context.Context, httpc *http.Client, cfg *config.Config, platform string) ([]string, error) {
-	u, err := url.Parse(cfg.PCS.BaseURL)
+// fetchAllIntelPCSData fetches ALL data from Intel PCS (global tracking)
+// This data is then used by evaluate-quotes service
+func (f *PCSFetcher) fetchAllIntelPCSData(ctx context.Context) error {
+	logrus.WithField("service", serviceName).Info("Starting Intel PCS global data fetch")
+
+	// Step 1: Fetch ALL FMSPCs from Intel PCS
+	allFMSPCs, err := f.fetchAllFMSPCsFromIntel(ctx)
 	if err != nil {
-		return nil, err
-	}
-	u.Path = "/sgx/certification/v4/fmspcs"
-	q := u.Query()
-	q.Set("platform", platform) // "TDX"
-	u.RawQuery = q.Encode()
-
-	req, _ := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if cfg.PCS.APIKey != "" {
-		req.Header.Set("Ocp-Apim-Subscription-Key", cfg.PCS.APIKey)
-	}
-	resp, err := httpc.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fmspcs request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("fmspcs %s -> %d: %s", u.String(), resp.StatusCode, string(b))
+		return fmt.Errorf("fetch Intel FMSPCs: %w", err)
 	}
 
-	b, _ := io.ReadAll(resp.Body)
+	logrus.WithFields(logrus.Fields{
+		"service": serviceName,
+		"count":   len(allFMSPCs),
+	}).Info("Fetched Intel PCS FMSPCs")
 
-	// Preferred: bare array [{ "fmspc": "...", "platform": "TDX" }, ...]
-	type arrItem struct {
-		FMSPC    string `json:"fmspc"`
-		Platform string `json:"platform"`
-	}
-	var arr []arrItem
-	if err := json.Unmarshal(b, &arr); err == nil && len(arr) > 0 {
-		out := make([]string, 0, len(arr))
-		for _, it := range arr {
-			if it.FMSPC == "" {
-				continue
-			}
-			if platform == "all" || strings.EqualFold(it.Platform, platform) {
-				out = append(out, it.FMSPC)
-			}
+	// Step 2: Fetch TCB info for each FMSPC
+	successCount := 0
+	errorCount := 0
+	skipCount := 0
+
+	for _, fmspc := range allFMSPCs {
+		// Check if we need to update (based on NextUpdate field)
+		needsUpdate, err := f.checkIfTCBUpdateNeeded(ctx, fmspc)
+		if err != nil {
+			logrus.WithError(err).WithField("fmspc", fmspc).Debug("Error checking TCB update status")
+			needsUpdate = true // Fetch if we can't determine
 		}
-		if len(out) > 0 {
-			return out, nil
+
+		if !needsUpdate {
+			skipCount++
+			continue
 		}
+
+		if err := f.fetchAndStoreTCBInfo(ctx, fmspc); err != nil {
+			logrus.WithError(err).WithField("fmspc", fmspc).Error("Failed to fetch TCB info")
+			errorCount++
+			continue
+		}
+		successCount++
+
+		// Small delay to avoid rate limiting
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Fallback: wrapper object { "fmspcs": [{ "fmspc": "..." }, ...] }
-	var wrap struct {
-		FMSPCs []struct {
-			FMSPC string `json:"fmspc"`
-		} `json:"fmspcs"`
-	}
-	if err := json.Unmarshal(b, &wrap); err == nil && len(wrap.FMSPCs) > 0 {
-		out := make([]string, 0, len(wrap.FMSPCs))
-		for _, e := range wrap.FMSPCs {
-			if e.FMSPC != "" {
-				out = append(out, e.FMSPC)
-			}
-		}
-		return out, nil
+	logrus.WithFields(logrus.Fields{
+		"service": serviceName,
+		"total":   len(allFMSPCs),
+		"success": successCount,
+		"errors":  errorCount,
+		"skipped": skipCount,
+	}).Info("Intel PCS TCB fetch complete")
+
+	// Step 3: Detect TCB changes (comparing versions)
+	if err := f.detectTCBChanges(ctx); err != nil {
+		logrus.WithError(err).Error("Failed to detect TCB changes")
 	}
 
-	return nil, fmt.Errorf("unexpected fmspcs JSON: %s", string(b))
+	// Step 4: Create global alerts for significant changes
+	if err := f.createGlobalTCBAlerts(ctx); err != nil {
+		logrus.WithError(err).Error("Failed to create global TCB alerts")
+	}
+
+	return nil
 }
 
-func fetchAndStore(ctx context.Context, httpc *http.Client, ch clickhouse.Conn, cfg *config.Config, fmspc string) error {
-	// TDX Get TCB Info: /tdx/certification/v4/tcb?fmspc=<hex>
-	u, err := url.Parse(cfg.PCS.BaseURL)
-	if err != nil {
-		return err
-	}
-	u.Path = "/tdx/certification/v4/tcb"
-	q := u.Query()
-	q.Set("fmspc", fmspc)
-	u.RawQuery = q.Encode()
+// fetchAllFMSPCsFromIntel fetches ALL FMSPCs from Intel PCS API
+func (f *PCSFetcher) fetchAllFMSPCsFromIntel(ctx context.Context) ([]string, error) {
+	// Correct URL: sgx/certification/v4/fmspcs?platform=all
+	url := fmt.Sprintf("%s/sgx/certification/v4/fmspcs?platform=all", f.baseURL)
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if cfg.PCS.APIKey != "" {
-		req.Header.Set("Ocp-Apim-Subscription-Key", cfg.PCS.APIKey)
-	}
-	resp, err := httpc.Do(req)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("pcs request: %w", err)
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	// Add API key if configured
+	if f.config.PCS.APIKey != "" {
+		req.Header.Set("Ocp-Apim-Subscription-Key", f.config.PCS.APIKey)
+	}
+
+	resp, err := f.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch FMSPCs: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("pcs %s -> %d: %s", u.String(), resp.StatusCode, string(b))
-	}
-	var raw map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return fmt.Errorf("decode pcs json: %w", err)
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("PCS API error: status=%d, body=%s", resp.StatusCode, string(body))
 	}
 
-	// Extract a couple of fields for convenience; keep raw_json
-	var issueDate, nextUpdate string
-	var tcbEvalNum float64
-	if tcbInfo, ok := raw["tcbInfo"].(map[string]any); ok {
-		if v, ok := tcbInfo["issueDate"].(string); ok {
-			issueDate = v
-		}
-		if v, ok := tcbInfo["nextUpdate"].(string); ok {
-			nextUpdate = v
-		}
-		if v, ok := tcbInfo["tcbEvaluationDataNumber"].(float64); ok {
-			tcbEvalNum = v
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
 	}
-	rawJSON, _ := json.Marshal(raw)
 
-	if issueDate == "" {
-		issueDate = "1970-01-01"
+	// Parse response - Intel returns array of FMSPC objects
+	var fmspcList []models.FMSPCResponse
+	if err := json.Unmarshal(body, &fmspcList); err != nil {
+		return nil, fmt.Errorf("parse FMSPC list: %w", err)
 	}
-	if nextUpdate == "" {
-		nextUpdate = "1970-01-01"
+
+	// Store all FMSPCs in the pcs_fmspcs table
+	var fmspcs []string
+	for _, item := range fmspcList {
+		fmspc := strings.ToUpper(item.FMSPC)
+		platform := item.Platform
+		if platform == "" {
+			platform = "ALL"
+		}
+
+		// Store in database
+		if err := f.clickhouse.Exec(ctx, clickdb.UpsertPCSFMSPC, fmspc, platform); err != nil {
+			logrus.WithError(err).WithField("fmspc", fmspc).Error("Failed to store FMSPC")
+			continue
+		}
+
+		fmspcs = append(fmspcs, fmspc)
 	}
-	return ch.Exec(ctx, clickdb.UpsertPCSTCBInfo,
-		fmspc,
-		uint32(tcbEvalNum),
-		issueDate,
-		nextUpdate,
-		string(rawJSON),
+
+	return fmspcs, nil
+}
+
+// checkIfTCBUpdateNeeded checks if TCB info needs updating based on NextUpdate field
+func (f *PCSFetcher) checkIfTCBUpdateNeeded(ctx context.Context, fmspc string) (bool, error) {
+	row := f.clickhouse.QueryRow(ctx, clickdb.GetLatestTCBInfo, fmspc)
+
+	var (
+		storedFMSPC string
+		evalNum     uint32
+		tcbLevels   string
+		rawJSON     string
 	)
+
+	if err := row.Scan(&storedFMSPC, &evalNum, &tcbLevels, &rawJSON); err != nil {
+		// No existing TCB info, needs fetch
+		return true, nil
+	}
+
+	// Parse the stored TCB info to check NextUpdate
+	var tcbData pcs.TCBInfoData
+	if err := json.Unmarshal([]byte(rawJSON), &struct {
+		TcbInfo *pcs.TCBInfoData `json:"tcbInfo"`
+	}{&tcbData}); err != nil {
+		// Can't parse, fetch new
+		return true, nil
+	}
+
+	// If NextUpdate has passed, we need to fetch
+	return time.Now().After(tcbData.NextUpdate), nil
+}
+
+func (f *PCSFetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) error {
+	url := fmt.Sprintf("%s/tdx/certification/v4/tcb?fmspc=%s", f.baseURL, fmspc)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	// Add API key if configured
+	if f.config.PCS.APIKey != "" {
+		req.Header.Set("Ocp-Apim-Subscription-Key", f.config.PCS.APIKey)
+	}
+
+	resp, err := f.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch TCB info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		// Some FMSPCs might not have TCB info yet
+		logrus.WithField("fmspc", fmspc).Debug("No TCB info available for FMSPC")
+		return nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("PCS API error: status=%d, body=%s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	// Parse TCB info using the extracted type
+	var tcbResp pcs.TCBInfoResponse
+	if err := json.Unmarshal(body, &tcbResp); err != nil {
+		return fmt.Errorf("parse TCB info: %w", err)
+	}
+
+	tcbInfo := tcbResp.TcbInfo
+	tcbInfo.FMSPC = strings.ToUpper(fmspc)
+	tcbInfo.RawJSON = string(body)
+
+	// Convert TCB levels to JSON for storage
+	tcbLevelsJSON, err := json.Marshal(tcbInfo.TcbLevels)
+	if err != nil {
+		return fmt.Errorf("marshal TCB levels: %w", err)
+	}
+
+	// Store using the query from queries.go
+	err = f.clickhouse.Exec(ctx, clickdb.UpsertPCSTCBInfo,
+		tcbInfo.FMSPC,
+		tcbInfo.TCBEvaluationDataNumber,
+		tcbInfo.IssueDate,
+		tcbInfo.NextUpdate,
+		tcbInfo.TCBType,
+		string(tcbLevelsJSON),
+		tcbInfo.RawJSON,
+	)
+
+	if err != nil {
+		return fmt.Errorf("store TCB info: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"service":              serviceName,
+		"fmspc":                fmspc,
+		"evaluationDataNumber": tcbInfo.TCBEvaluationDataNumber,
+		"tcbLevels":            len(tcbInfo.TcbLevels),
+		"nextUpdate":           tcbInfo.NextUpdate.Format(time.RFC3339),
+	}).Debug("Stored TCB info")
+
+	return nil
+}
+
+func (f *PCSFetcher) detectTCBChanges(ctx context.Context) error {
+	rows, err := f.clickhouse.Query(ctx, clickdb.GetTCBChanges)
+	if err != nil {
+		return fmt.Errorf("query TCB changes: %w", err)
+	}
+	defer rows.Close()
+
+	totalChanges := 0
+	for rows.Next() {
+		var fmspc string
+		var currentEval, previousEval uint32
+		var currentLevelsJSON, previousLevelsJSON string
+
+		if err := rows.Scan(&fmspc, &currentEval, &previousEval, &currentLevelsJSON, &previousLevelsJSON); err != nil {
+			continue
+		}
+
+		// Analyze what changed
+		changes := f.analyzeTCBChanges(fmspc, currentLevelsJSON, previousLevelsJSON, currentEval)
+		for _, change := range changes {
+			if err := f.recordTCBChange(ctx, &change); err != nil {
+				logrus.WithError(err).Error("Failed to record TCB change")
+			}
+		}
+
+		if len(changes) > 0 {
+			logrus.WithFields(logrus.Fields{
+				"service":      serviceName,
+				"fmspc":        fmspc,
+				"previousEval": previousEval,
+				"currentEval":  currentEval,
+				"changes":      len(changes),
+			}).Info("Detected Intel TCB changes")
+
+			totalChanges += len(changes)
+		}
+	}
+
+	if totalChanges > 0 {
+		logrus.WithFields(logrus.Fields{
+			"service":      serviceName,
+			"totalChanges": totalChanges,
+		}).Info("Total Intel TCB component changes detected")
+	}
+
+	return rows.Err()
+}
+
+func (f *PCSFetcher) analyzeTCBChanges(fmspc, currentJSON, previousJSON string, evalNum uint32) []models.TCBChange {
+	var changes []models.TCBChange
+
+	var currentLevels, previousLevels []models.TCBLevel
+	json.Unmarshal([]byte(currentJSON), &currentLevels)
+	json.Unmarshal([]byte(previousJSON), &previousLevels)
+
+	if len(currentLevels) == 0 || len(previousLevels) == 0 {
+		return changes
+	}
+
+	// Compare the first (highest) TCB level components
+	current := currentLevels[0]
+	previous := previousLevels[0]
+
+	// Check SGX components
+	for i, curr := range current.TCB.SGXComponents {
+		if i < len(previous.TCB.SGXComponents) {
+			prev := previous.TCB.SGXComponents[i]
+			if curr.SVN != prev.SVN {
+				changeType := "UPGRADE"
+				if curr.SVN < prev.SVN {
+					changeType = "DOWNGRADE"
+				}
+				changes = append(changes, models.TCBChange{
+					FMSPC:            fmspc,
+					ComponentIndex:   i,
+					ComponentName:    tdx.GetComponentName(i),
+					ComponentType:    tdx.GetComponentType(i),
+					OldVersion:       prev.SVN,
+					NewVersion:       curr.SVN,
+					ChangeType:       changeType,
+					EvaluationNumber: evalNum,
+					DetectedAt:       time.Now().UTC(),
+				})
+			}
+		}
+	}
+
+	// Check TDX components
+	for i, curr := range current.TCB.TDXComponents {
+		if i < len(previous.TCB.TDXComponents) {
+			prev := previous.TCB.TDXComponents[i]
+			if curr.SVN != prev.SVN {
+				changeType := "UPGRADE"
+				if curr.SVN < prev.SVN {
+					changeType = "DOWNGRADE"
+				}
+
+				componentIndex := 16 + i // TDX components start at index 16
+				changes = append(changes, models.TCBChange{
+					FMSPC:            fmspc,
+					ComponentIndex:   componentIndex,
+					ComponentName:    tdx.GetComponentName(componentIndex),
+					ComponentType:    tdx.GetComponentType(componentIndex),
+					OldVersion:       prev.SVN,
+					NewVersion:       curr.SVN,
+					ChangeType:       changeType,
+					EvaluationNumber: evalNum,
+					DetectedAt:       time.Now().UTC(),
+				})
+			}
+		}
+	}
+
+	return changes
+}
+
+func (f *PCSFetcher) recordTCBChange(ctx context.Context, change *models.TCBChange) error {
+	return f.clickhouse.Exec(ctx, clickdb.InsertTCBComponentChange,
+		change.FMSPC,
+		change.ComponentIndex,
+		change.ComponentName,
+		change.ComponentType,
+		change.OldVersion,
+		change.NewVersion,
+		change.ChangeType,
+		change.EvaluationNumber,
+	)
+}
+
+func (f *PCSFetcher) createGlobalTCBAlerts(ctx context.Context) error {
+	// Use query from queries.go
+	rows, err := f.clickhouse.Query(ctx, clickdb.GetRecentTCBChanges)
+	if err != nil {
+		return fmt.Errorf("query recent TCB changes: %w", err)
+	}
+	defer rows.Close()
+
+	alertCount := 0
+	for rows.Next() {
+		var alert pcs.TCBChangeAlert
+
+		if err := rows.Scan(&alert.FMSPC, &alert.EvaluationNumber,
+			&alert.TotalChanges, &alert.Downgrades); err != nil {
+			continue
+		}
+
+		// Determine severity based on changes
+		alert.Severity = f.calculateAlertSeverity(alert.TotalChanges, alert.Downgrades)
+
+		// Create alert details
+		details := map[string]interface{}{
+			"fmspc":            alert.FMSPC,
+			"evaluationNumber": alert.EvaluationNumber,
+			"totalChanges":     alert.TotalChanges,
+			"downgrades":       alert.Downgrades,
+			"source":           "Intel PCS",
+			"service":          serviceName,
+			"timestamp":        time.Now().UTC(),
+		}
+		detailsJSON, _ := json.Marshal(details)
+
+		alertID := uint64(time.Now().UnixNano())
+		if err := f.clickhouse.Exec(ctx, clickdb.InsertGlobalTCBAlert,
+			alertID, alert.Severity, alert.FMSPC, alert.EvaluationNumber, string(detailsJSON)); err != nil {
+			logrus.WithError(err).Error("Failed to create global TCB alert")
+			continue
+		}
+
+		alertCount++
+	}
+
+	if alertCount > 0 {
+		logrus.WithFields(logrus.Fields{
+			"service": serviceName,
+			"count":   alertCount,
+		}).Info("Created global TCB update alerts")
+	}
+
+	return rows.Err()
+}
+
+func (f *PCSFetcher) calculateAlertSeverity(changeCount, downgradeCount uint32) string {
+	if downgradeCount > 3 {
+		return "CRITICAL"
+	}
+	if changeCount > 10 || downgradeCount > 0 {
+		return "HIGH"
+	}
+	if changeCount > 5 {
+		return "MEDIUM"
+	}
+	return "LOW"
 }

@@ -11,8 +11,29 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+type Config struct {
+	LogLevel string
+	Debug    bool // Add debug flag
+
+	// Ethereum settings
+	Ethereum Ethereum
+
+	// ClickHouse settings
+	ClickHouse ClickHouse
+
+	// Service-specific settings
+	IngestRegistry IngestRegistry
+	EvaluateQuotes EvaluateQuotes
+	PCS            PCS
+}
+
+type Ethereum struct {
+	RPCURL          string
+	RegistryAddress common.Address
+	StartBlock      uint64 // Add start block
+}
+
 type ClickHouse struct {
-	// Native protocol addresses: host:port (comma-separated), e.g. "clickhouse:9000"
 	Addrs       []string
 	Database    string
 	Username    string
@@ -34,19 +55,7 @@ type EvaluateQuotes struct {
 type PCS struct {
 	BaseURL       string        // e.g. https://api.trustedservices.intel.com
 	APIKey        string        // Ocp-Apim-Subscription-Key (if required)
-	FMSPCs        []string      // comma-separated list in env
-	POLL_INTERVAL time.Duration // e.g. 24h or 1h30m
-}
-
-type Config struct {
-	LogLevel        string
-	RPCURL          string
-	RegistryAddress common.Address
-
-	ClickHouse     ClickHouse
-	IngestRegistry IngestRegistry
-	EvaluateQuotes EvaluateQuotes
-	PCS            PCS
+	POLL_INTERVAL time.Duration // Polling interval for PCS updates
 }
 
 func getenv(key, def string) string {
@@ -78,6 +87,17 @@ func getInt(key string, def int) int {
 	return def
 }
 
+func getUint64(key string, def uint64) uint64 {
+	if v := os.Getenv(key); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err == nil {
+			return n
+		}
+		log.Printf("WARN: invalid uint64 %s=%q, using default %d", key, v, def)
+	}
+	return def
+}
+
 func getBool(key string, def bool) bool {
 	if v := os.Getenv(key); v != "" {
 		b, err := strconv.ParseBool(v)
@@ -90,61 +110,57 @@ func getBool(key string, def bool) bool {
 }
 
 func Load() (*Config, error) {
-	// Defaults point to your values so it “just works” until customized.
-	rpcURL := getenv("RPC_URL", "http://experi-proxy-cdzrhzcy6czr-74615020.us-east-2.elb.amazonaws.com/")
+	// Get RPC URL from multiple possible env vars
+	rpcURL := getenv("ETHEREUM_RPC_URL", getenv("RPC_URL", "http://localhost:8545"))
+
+	// Registry address
 	regAddr := getenv("REGISTRY_ADDRESS", "0x927Ea8b713123744E6E0a92f4417366B0B000dA5")
 	if !common.IsHexAddress(regAddr) {
 		return nil, fmt.Errorf("invalid REGISTRY_ADDRESS: %s", regAddr)
 	}
 
 	// ClickHouse (native protocol)
-	chAddrs := strings.Split(getenv("CH_ADDRS", "clickhouse:9000"), ",")
+	chAddrs := strings.Split(getenv("CH_ADDRS", getenv("CLICKHOUSE_ADDRS", "clickhouse:9000")), ",")
 	for i := range chAddrs {
 		chAddrs[i] = strings.TrimSpace(chAddrs[i])
 	}
+
 	ch := ClickHouse{
 		Addrs:       chAddrs,
-		Database:    getenv("CH_DATABASE", "go_tcb_notify"),
-		Username:    getenv("CH_USERNAME", "default"),
-		Password:    getenv("CH_PASSWORD", ""),
-		DialTimeout: getDuration("CH_DIAL_TIMEOUT", 5*time.Second),
-		Compression: strings.ToLower(getenv("CH_COMPRESSION", "lz4")),
-		Secure:      getBool("CH_SECURE", false),
+		Database:    getenv("CH_DATABASE", getenv("CLICKHOUSE_DATABASE", "go_tcb_notify")),
+		Username:    getenv("CH_USERNAME", getenv("CLICKHOUSE_USERNAME", "default")),
+		Password:    getenv("CH_PASSWORD", getenv("CLICKHOUSE_PASSWORD", "")),
+		DialTimeout: getDuration("CH_DIAL_TIMEOUT", getDuration("CLICKHOUSE_DIAL_TIMEOUT", 5*time.Second)),
+		Compression: strings.ToLower(getenv("CH_COMPRESSION", getenv("CLICKHOUSE_COMPRESSION", "lz4"))),
+		Secure:      getBool("CH_SECURE", getBool("CLICKHOUSE_SECURE", false)),
 	}
 
 	cfg := &Config{
-		LogLevel:        getenv("LOG_LEVEL", "info"),
-		RPCURL:          rpcURL,
-		RegistryAddress: common.HexToAddress(regAddr),
-		ClickHouse:      ch,
-		IngestRegistry: IngestRegistry{
-			PollInterval: getDuration("INGEST_POLL_INTERVAL", 15*time.Second),
-			BatchBlocks:  uint64(getInt("INGEST_BATCH_BLOCKS", 2500)),
+		LogLevel: getenv("LOG_LEVEL", "info"),
+		Debug:    getBool("DEBUG", false),
+
+		Ethereum: Ethereum{
+			RPCURL:          rpcURL,
+			RegistryAddress: common.HexToAddress(regAddr),
+			StartBlock:      getUint64("START_BLOCK", 0),
 		},
+
+		ClickHouse: ch,
+
+		IngestRegistry: IngestRegistry{
+			PollInterval: getDuration("INGEST_POLL_INTERVAL", 15*time.Minute),
+			BatchBlocks:  getUint64("INGEST_BATCH_BLOCKS", 2500),
+		},
+
 		EvaluateQuotes: EvaluateQuotes{
 			BatchSize: getInt("EVAL_BATCH_SIZE", 500),
 		},
+
 		PCS: PCS{
 			BaseURL:       getenv("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
 			APIKey:        getenv("PCS_API_KEY", ""),
-			FMSPCs:        parseList(getenv("PCS_FMSPC_LIST", "")),
-			POLL_INTERVAL: getDuration("PCS_POLL_INTERVAL", 24*time.Hour),
+			POLL_INTERVAL: getDuration("PCS_POLL_INTERVAL", 15*time.Minute),
 		},
 	}
 	return cfg, nil
-}
-
-func parseList(s string) []string {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	items := strings.Split(s, ",")
-	out := make([]string, 0, len(items))
-	for _, it := range items {
-		it = strings.TrimSpace(it)
-		if it != "" {
-			out = append(out, it)
-		}
-	}
-	return out
 }
