@@ -26,3 +26,14 @@ type TCBChangeAlert struct {
 	Downgrades       uint32
 	Severity         string
 }
+
+// TCBAlertDetails represents the structured details for a TCB alert
+type TCBAlertDetails struct {
+	FMSPC            string    `json:"fmspc"`
+	EvaluationNumber uint32    `json:"evaluationNumber"`
+	TotalChanges     uint32    `json:"totalChanges"`
+	Downgrades       uint32    `json:"downgrades"`
+	Source           string    `json:"source"`
+	Service          string    `json:"service"`
+	Timestamp        time.Time `json:"timestamp"`
+}

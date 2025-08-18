@@ -497,15 +497,15 @@ func (f *PCSFetcher) createGlobalTCBAlerts(ctx context.Context) error {
 		// Determine severity based on changes
 		alert.Severity = f.calculateAlertSeverity(alert.TotalChanges, alert.Downgrades)
 
-		// Create alert details
-		details := map[string]interface{}{
-			"fmspc":            alert.FMSPC,
-			"evaluationNumber": alert.EvaluationNumber,
-			"totalChanges":     alert.TotalChanges,
-			"downgrades":       alert.Downgrades,
-			"source":           "Intel PCS",
-			"service":          serviceName,
-			"timestamp":        time.Now().UTC(),
+		// Create alert details using proper struct
+		details := pcs.TCBAlertDetails{
+			FMSPC:            alert.FMSPC,
+			EvaluationNumber: alert.EvaluationNumber,
+			TotalChanges:     alert.TotalChanges,
+			Downgrades:       alert.Downgrades,
+			Source:           "Intel PCS",
+			Service:          serviceName,
+			Timestamp:        time.Now().UTC(),
 		}
 		detailsJSON, _ := json.Marshal(details)
 
