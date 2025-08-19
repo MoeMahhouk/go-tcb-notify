@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	clickdb "github.com/MoeMahhouk/go-tcb-notify/internal/storage/clickhouse"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdx"
 	"github.com/google/go-tdx-guest/verify"
 )
@@ -173,9 +175,9 @@ func (e *QuoteEvaluator) evaluateQuote(ctx context.Context, quoteBytes []byte) (
 		// Try to determine TCB status from error message
 		// The verify library returns specific error messages for TCB issues
 		switch {
-		case contains(errorMsg, "TCB"):
+		case strings.Contains(errorMsg, "TCB"):
 			tcbStatus = "OutOfDate"
-		case contains(errorMsg, "revoked"):
+		case strings.Contains(errorMsg, "revoked"):
 			tcbStatus = "Revoked"
 		default:
 			tcbStatus = "Invalid"
@@ -233,9 +235,9 @@ func (e *QuoteEvaluator) storeEvaluation(ctx context.Context,
 	if err == nil {
 		fmspc = parsed.FMSPC
 		// Extract TCB components if parsing succeeded
-		if (parsed.TCBComponents != tdx.TCBComponents{}) {
-			sgxComponents = parsed.TCBComponents.SGX[:]
-			tdxComponents = parsed.TCBComponents.TDX[:]
+		if (parsed.TCBComponents != models.TCBComponents{}) {
+			sgxComponents = parsed.TCBComponents.SGXComponents[:]
+			tdxComponents = parsed.TCBComponents.TDXComponents[:]
 			pceSvn = parsed.TCBComponents.PCESVN
 		}
 	}
@@ -246,21 +248,4 @@ func (e *QuoteEvaluator) storeEvaluation(ctx context.Context,
 		status, tcbStatus, errorMsg,
 		fmspc, sgxComponents, tdxComponents, pceSvn,
 		blockNumber, logIndex, blockTime)
-}
-
-// Helper function to check if a string contains a substring
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 &&
-		(s == substr || len(s) > len(substr) &&
-			(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-				findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

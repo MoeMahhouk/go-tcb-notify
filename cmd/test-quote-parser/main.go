@@ -72,14 +72,14 @@ func main() {
 
 	fmt.Println("\n=== TCB Components ===")
 	fmt.Println("SGX TCB Components:")
-	for i, comp := range parsedQuote.TCBComponents.SGX {
+	for i, comp := range parsedQuote.TCBComponents.SGXComponents {
 		if comp != 0 {
 			fmt.Printf("  Component[%d]: %d\n", i, comp)
 		}
 	}
 
 	fmt.Println("TDX TCB Components:")
-	for i, comp := range parsedQuote.TCBComponents.TDX {
+	for i, comp := range parsedQuote.TCBComponents.TDXComponents {
 		if comp != 0 {
 			fmt.Printf("  Component[%d]: %d\n", i, comp)
 		}

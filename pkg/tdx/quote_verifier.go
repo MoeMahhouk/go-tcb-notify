@@ -54,8 +54,8 @@ func (v *QuoteVerifier) ParseQuote(quoteBytes []byte) (*models.ParsedQuote, erro
 		Quote: quote,
 		FMSPC: fmspc,
 		TCBComponents: models.TCBComponents{
-			SGXComponents: comps.SGX,
-			TDXComponents: comps.TDX,
+			SGXComponents: comps.SGXComponents,
+			TDXComponents: comps.TDXComponents,
 			PCESVN:        comps.PCESVN,
 		},
 	}
@@ -85,7 +85,7 @@ func (v *QuoteVerifier) VerifyAndEvaluateQuote(quoteBytes []byte) (*models.Quote
 	hash := sha256.Sum256(quoteBytes)
 
 	evaluation := &models.QuoteEvaluation{
-		QuoteLength: len(quoteBytes),
+		QuoteLength: uint32(len(quoteBytes)),
 		QuoteHash:   hex.EncodeToString(hash[:]),
 	}
 
@@ -206,7 +206,7 @@ func ExtractComponentDetails(components models.TCBComponents) []models.Component
 }
 
 // ExtractFromQuote gathers (FMSPC, SGX[16], PCESVN) from PCK and TDX[16] from TD report.
-func ExtractFromQuote(q *pb.QuoteV4) (fmspcHex string, comps TCBComponents, err error) {
+func ExtractFromQuote(q *pb.QuoteV4) (fmspcHex string, comps models.TCBComponents, err error) {
 	fmspcHex, err = ExtractFMSPCFromQuote(q)
 	if err != nil {
 		return "", comps, err
@@ -215,12 +215,12 @@ func ExtractFromQuote(q *pb.QuoteV4) (fmspcHex string, comps TCBComponents, err 
 	if err != nil {
 		return "", comps, err
 	}
-	comps.SGX = sgx16
+	comps.SGXComponents = sgx16
 	comps.PCESVN = pcesvn
 
 	tdxBytes := q.GetTdQuoteBody().GetTeeTcbSvn() // 16 bytes
 	for i := 0; i < 16 && i < len(tdxBytes); i++ {
-		comps.TDX[i] = tdxBytes[i]
+		comps.TDXComponents[i] = tdxBytes[i]
 	}
 	return fmspcHex, comps, nil
 }

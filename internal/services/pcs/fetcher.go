@@ -13,7 +13,6 @@ import (
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	clickdb "github.com/MoeMahhouk/go-tcb-notify/internal/storage/clickhouse"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
-	pcstypes "github.com/MoeMahhouk/go-tcb-notify/pkg/pcs"
 )
 
 const ServiceName = "fetch-pcs"
@@ -161,8 +160,14 @@ func (f *Fetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) (bool,
 		return false, err
 	}
 
+	// Parse the TCB info to get evaluation number
+	var tcbInfo models.TCBInfo
+	if err := json.Unmarshal(tcbResp.TCBInfo, &tcbInfo); err != nil {
+		return false, fmt.Errorf("unmarshal TCB info: %w", err)
+	}
+
 	// Check if updated
-	updated := tcbResp.TcbInfo.TCBEvaluationDataNumber > currentEvalNum
+	updated := tcbInfo.TCBEvaluationDataNumber > currentEvalNum
 
 	// Store TCB info
 	if err := f.storeTCBInfo(ctx, fmspc, tcbResp); err != nil {
@@ -173,7 +178,7 @@ func (f *Fetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) (bool,
 		f.logger.WithFields(logrus.Fields{
 			"fmspc":    fmspc,
 			"old_eval": currentEvalNum,
-			"new_eval": tcbResp.TcbInfo.TCBEvaluationDataNumber,
+			"new_eval": tcbInfo.TCBEvaluationDataNumber,
 		}).Info("TCB update detected")
 	}
 
@@ -194,8 +199,14 @@ func (f *Fetcher) storeFMSPC(ctx context.Context, fmspc models.FMSPCResponse) er
 }
 
 // storeTCBInfo stores TCB info in the database
-func (f *Fetcher) storeTCBInfo(ctx context.Context, fmspc string, tcbResp *pcstypes.TCBInfoResponse) error {
-	tcbLevelsJSON, err := json.Marshal(tcbResp.TcbInfo.TcbLevels)
+func (f *Fetcher) storeTCBInfo(ctx context.Context, fmspc string, tcbResp *models.TCBInfoResponse) error {
+	// Parse the TCB info from the raw JSON
+	var tcbInfo models.TCBInfo
+	if err := json.Unmarshal(tcbResp.TCBInfo, &tcbInfo); err != nil {
+		return fmt.Errorf("unmarshal TCB info: %w", err)
+	}
+
+	tcbLevelsJSON, err := json.Marshal(tcbInfo.TCBLevels)
 	if err != nil {
 		return fmt.Errorf("marshal TCB levels: %w", err)
 	}
@@ -207,10 +218,10 @@ func (f *Fetcher) storeTCBInfo(ctx context.Context, fmspc string, tcbResp *pcsty
 
 	return f.db.Exec(ctx, clickdb.InsertPCSTCBInfo,
 		strings.ToUpper(fmspc),
-		tcbResp.TcbInfo.TCBEvaluationDataNumber,
-		tcbResp.TcbInfo.IssueDate,
-		tcbResp.TcbInfo.NextUpdate,
-		tcbResp.TcbInfo.TCBType,
+		tcbInfo.TCBEvaluationDataNumber,
+		tcbInfo.IssueDate,
+		tcbInfo.NextUpdate,
+		tcbInfo.TCBType,
 		string(tcbLevelsJSON),
 		string(rawJSON),
 	)

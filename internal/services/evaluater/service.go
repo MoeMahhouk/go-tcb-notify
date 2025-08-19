@@ -154,7 +154,7 @@ func (e *Evaluator) evaluateQuote(quote models.RegistryQuote) *models.QuoteEvalu
 	evaluation := &models.QuoteEvaluation{
 		ServiceAddress: quote.ServiceAddress,
 		QuoteHash:      quote.QuoteHash,
-		QuoteLength:    int(quote.QuoteLength),
+		QuoteLength:    quote.QuoteLength,
 		BlockNumber:    quote.BlockNumber,
 		LogIndex:       quote.LogIndex,
 		BlockTime:      quote.BlockTime,
@@ -172,12 +172,8 @@ func (e *Evaluator) evaluateQuote(quote models.RegistryQuote) *models.QuoteEvalu
 
 	// Extract components
 	evaluation.FMSPC = parsed.FMSPC
-	if parsed.TCBComponents != (tdx.TCBComponents{}) {
-		evaluation.TCBComponents = models.TCBComponents{
-			SGXComponents: parsed.TCBComponents.SGX,
-			TDXComponents: parsed.TCBComponents.TDX,
-			PCESVN:        parsed.TCBComponents.PCESVN,
-		}
+	if parsed.TCBComponents != (models.TCBComponents{}) {
+		evaluation.TCBComponents = parsed.TCBComponents
 	}
 
 	// Verify the quote

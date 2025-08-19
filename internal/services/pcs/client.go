@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
-	pcstypes "github.com/MoeMahhouk/go-tcb-notify/pkg/pcs"
 )
 
 // Client handles communication with Intel PCS API
@@ -52,7 +51,7 @@ func (c *Client) GetFMSPCs(ctx context.Context, platform string) ([]models.FMSPC
 }
 
 // GetTCBInfo fetches TCB info for a specific FMSPC
-func (c *Client) GetTCBInfo(ctx context.Context, fmspc string) (*pcstypes.TCBInfoResponse, error) {
+func (c *Client) GetTCBInfo(ctx context.Context, fmspc string) (*models.TCBInfoResponse, error) {
 	url := fmt.Sprintf("%s/tdx/certification/v4/tcb?fmspc=%s", c.baseURL, fmspc)
 
 	body, err := c.doRequest(ctx, "GET", url, nil)
@@ -60,7 +59,7 @@ func (c *Client) GetTCBInfo(ctx context.Context, fmspc string) (*pcstypes.TCBInf
 		return nil, err
 	}
 
-	var tcbResp pcstypes.TCBInfoResponse
+	var tcbResp models.TCBInfoResponse
 	if err := json.Unmarshal(body, &tcbResp); err != nil {
 		return nil, fmt.Errorf("parse TCB info: %w", err)
 	}
