@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,8 +12,8 @@ import (
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	clickdb "github.com/MoeMahhouk/go-tcb-notify/internal/storage/clickhouse"
-	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdx"
+	"github.com/google/go-tdx-guest/verify"
 )
 
 const serviceName = "evaluate-quotes"
@@ -29,188 +27,240 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		logrus.Info("Shutting down...")
+		logrus.Info("Shutting down evaluate-quotes service...")
 		cancel()
 	}()
 
+	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		logrus.Fatalf("Failed to load config: %v", err)
 	}
 
 	// Setup logging
-	if cfg.Debug {
-		logrus.SetLevel(logrus.DebugLevel)
+	level, err := logrus.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		level = logrus.InfoLevel
 	}
+	logrus.SetLevel(level)
 
+	// Connect to ClickHouse
 	ch, err := clickdb.Open(ctx, &cfg.ClickHouse)
 	if err != nil {
-		log.Fatalf("clickhouse: %v", err)
+		logrus.Fatalf("Failed to connect to ClickHouse: %v", err)
 	}
 	defer ch.Close()
 
-	// Note: GetCollateral and CheckRevocations should be part of a verification config
-	// For now, we'll use default values
-	getCollateral := false    // Default to false for performance
-	checkRevocations := false // Default to false for performance
+	logrus.WithFields(logrus.Fields{
+		"service":           serviceName,
+		"poll_interval":     cfg.EvaluateQuotes.PollInterval,
+		"batch_size":        cfg.EvaluateQuotes.BatchSize,
+		"get_collateral":    cfg.EvaluateQuotes.GetCollateral,
+		"check_revocations": cfg.EvaluateQuotes.CheckRevocations,
+	}).Info("Starting quote evaluation service")
 
-	log.Printf("[eval] Starting: batch_size=%d, get_collateral=%v, check_revocations=%v",
-		cfg.EvaluateQuotes.BatchSize, getCollateral, checkRevocations)
-
-	// Get last checkpoint
-	lastBlock, lastIdx, err := getOffset(ctx, ch)
-	if err != nil {
-		log.Printf("WARN get offset: %v (starting from 0)", err)
-		lastBlock = 0
-		lastIdx = 0
+	// Create evaluator
+	evaluator := &QuoteEvaluator{
+		clickhouse: ch,
+		config:     cfg,
+		parser:     tdx.NewQuoteParser(),
 	}
 
-	// Main processing loop
-	for {
-		if err := processQuotes(ctx, ch, cfg.EvaluateQuotes.BatchSize, getCollateral, checkRevocations, &lastBlock, &lastIdx); err != nil {
-			log.Printf("ERROR process: %v", err)
-			time.Sleep(5 * time.Second)
-		}
+	// Main evaluation loop
+	ticker := time.NewTicker(cfg.EvaluateQuotes.PollInterval)
+	defer ticker.Stop()
 
-		// Check for shutdown
+	// Evaluate immediately on startup
+	evaluator.evaluateAllQuotes(ctx)
+
+	for {
 		select {
 		case <-ctx.Done():
+			logrus.Info("Evaluation service stopped")
 			return
-		case <-time.After(2 * time.Second):
-			// Continue processing
+		case <-ticker.C:
+			evaluator.evaluateAllQuotes(ctx)
 		}
 	}
 }
 
-func getOffset(ctx context.Context, ch clickhouse.Conn) (uint64, uint, error) {
-	var lastBlock uint64
-	var lastIdx uint32
-	row := ch.QueryRow(ctx, clickdb.GetOffset, serviceName)
-	if err := row.Scan(&lastBlock, &lastIdx); err != nil {
-		// No prior offset yet; start from zero (handled in caller)
-		return 0, 0, nil
-	}
-	return lastBlock, uint(lastIdx), nil
+type QuoteEvaluator struct {
+	clickhouse clickhouse.Conn
+	config     *config.Config
+	parser     *tdx.QuoteParser
 }
 
-func processQuotes(ctx context.Context, ch clickhouse.Conn, batchSize int, getCollateral, checkRevocations bool, lastBlock *uint64, lastIdx *uint) error {
-	// Query for new events using the query from queries.go
-	rows, err := ch.Query(ctx, clickdb.GetUnprocessedQuotes, *lastBlock, *lastBlock, *lastIdx, batchSize)
+// evaluateAllQuotes fetches and evaluates ALL registered quotes
+func (e *QuoteEvaluator) evaluateAllQuotes(ctx context.Context) {
+	start := time.Now()
+
+	// Fetch all registered quotes
+	rows, err := e.clickhouse.Query(ctx, clickdb.GetAllRegisteredQuotes)
 	if err != nil {
-		return fmt.Errorf("query quotes: %w", err)
+		logrus.WithError(err).Error("Failed to fetch registered quotes")
+		return
 	}
 	defer rows.Close()
 
-	verifier := tdx.NewQuoteVerifier(getCollateral, checkRevocations)
-	batch := make([]models.QuoteEvaluation, 0, batchSize)
+	evaluatedCount := 0
+	invalidCount := 0
+	validCount := 0
 
 	for rows.Next() {
 		var (
-			teeAddress  string
-			quoteBytes  []byte
-			quoteHash   string
-			blockNumber uint64
-			logIndex    uint32
-			blockTime   time.Time
+			serviceAddress string
+			blockNumber    uint64
+			blockTime      time.Time
+			txHash         string
+			logIndex       uint32
+			quoteBytes     []byte
+			quoteLen       uint32
+			quoteHash      string
 		)
 
-		if err := rows.Scan(&teeAddress, &quoteBytes, &quoteHash, &blockNumber, &logIndex, &blockTime); err != nil {
-			return fmt.Errorf("scan row: %w", err)
+		if err := rows.Scan(&serviceAddress, &blockNumber, &blockTime, &txHash,
+			&logIndex, &quoteBytes, &quoteLen, &quoteHash); err != nil {
+			logrus.WithError(err).Error("Failed to scan quote row")
+			continue
 		}
 
-		// Verify and evaluate the quote
-		evaluation, err := verifier.VerifyAndEvaluateQuote(quoteBytes)
-		if err != nil {
-			logrus.WithError(err).WithField("hash", quoteHash).Error("Failed to evaluate quote")
-			// Create failed evaluation
-			evaluation = &models.QuoteEvaluation{
-				ServiceAddress: teeAddress,
-				QuoteHash:      quoteHash,
-				QuoteLength:    len(quoteBytes),
-				Status:         models.StatusInvalid,
-				TCBStatus:      models.TCBStatusUnknown,
-				Error:          err.Error(),
-				BlockNumber:    blockNumber,
-				LogIndex:       logIndex,
-				BlockTime:      blockTime,
-				EvaluatedAt:    time.Now(),
-			}
+		// Evaluate this quote
+		status, tcbStatus, errorMsg := e.evaluateQuote(ctx, quoteBytes)
+
+		// Check for status change
+		e.checkAndRecordStatusChange(ctx, serviceAddress, quoteHash, status, tcbStatus)
+
+		// Store evaluation result
+		if err := e.storeEvaluation(ctx, serviceAddress, quoteHash, quoteLen,
+			status, tcbStatus, errorMsg, blockNumber, logIndex, blockTime, quoteBytes); err != nil {
+			logrus.WithError(err).WithField("address", serviceAddress).Error("Failed to store evaluation")
+			continue
+		}
+
+		evaluatedCount++
+		if status == "Valid" {
+			validCount++
 		} else {
-			// Set additional fields
-			evaluation.ServiceAddress = teeAddress
-			evaluation.BlockNumber = blockNumber
-			evaluation.LogIndex = logIndex
-			evaluation.BlockTime = blockTime
-			evaluation.EvaluatedAt = time.Now()
+			invalidCount++
 		}
-
-		batch = append(batch, *evaluation)
-
-		// Update checkpoint
-		*lastBlock = blockNumber
-		*lastIdx = uint(logIndex)
 	}
 
-	if len(batch) > 0 {
-		// Insert evaluations
-		if err := insertEvaluations(ctx, ch, batch); err != nil {
-			return fmt.Errorf("insert evaluations: %w", err)
-		}
-
-		// Update offset
-		if err := upsertOffset(ctx, ch, *lastBlock, uint32(*lastIdx)); err != nil {
-			return fmt.Errorf("update offset: %w", err)
-		}
-
-		log.Printf("[eval] Processed %d quotes, last: block=%d idx=%d", len(batch), *lastBlock, *lastIdx)
-	}
-
-	return nil
+	duration := time.Since(start)
+	logrus.WithFields(logrus.Fields{
+		"evaluated": evaluatedCount,
+		"valid":     validCount,
+		"invalid":   invalidCount,
+		"duration":  duration,
+	}).Info("Completed quote evaluation cycle")
 }
 
-func insertEvaluations(ctx context.Context, ch clickhouse.Conn, evaluations []models.QuoteEvaluation) error {
-	batch, err := ch.PrepareBatch(ctx, clickdb.InsertEvaluation)
+// evaluateQuote verifies a single quote and returns its status
+func (e *QuoteEvaluator) evaluateQuote(ctx context.Context, quoteBytes []byte) (status string, tcbStatus string, errorMsg string) {
+	// Create verification options
+	opts := verify.Options{
+		GetCollateral:    e.config.EvaluateQuotes.GetCollateral,
+		CheckRevocations: e.config.EvaluateQuotes.CheckRevocations,
+	}
+
+	// Verify the quote using google-go-tdx-guest library
+	err := verify.TdxQuote(quoteBytes, &opts)
+
 	if err != nil {
-		return fmt.Errorf("prepare batch: %w", err)
+		// Quote is invalid
+		status = "Invalid"
+		errorMsg = err.Error()
+
+		// Try to determine TCB status from error message
+		// The verify library returns specific error messages for TCB issues
+		switch {
+		case contains(errorMsg, "TCB"):
+			tcbStatus = "OutOfDate"
+		case contains(errorMsg, "revoked"):
+			tcbStatus = "Revoked"
+		default:
+			tcbStatus = "Invalid"
+		}
+	} else {
+		// Quote is valid
+		status = "Valid"
+		tcbStatus = "UpToDate"
+		errorMsg = ""
 	}
 
-	for _, eval := range evaluations {
-		// Convert TCBComponents to individual arrays for storage
-		sgxComponents := make([]uint8, 16)
-		tdxComponents := make([]uint8, 16)
-		for i := 0; i < 16; i++ {
-			sgxComponents[i] = eval.TCBComponents.SGXComponents[i]
-			tdxComponents[i] = eval.TCBComponents.TDXComponents[i]
-		}
-
-		err := batch.Append(
-			eval.ServiceAddress,
-			eval.QuoteHash,
-			eval.QuoteLength,
-			eval.FMSPC,
-			sgxComponents,
-			tdxComponents,
-			eval.TCBComponents.PCESVN,
-			eval.MrTd,
-			eval.MrSeam,
-			eval.MrSignerSeam,
-			eval.ReportData,
-			string(eval.Status),
-			string(eval.TCBStatus),
-			eval.Error,
-			eval.BlockNumber,
-			eval.LogIndex,
-			eval.BlockTime,
-			eval.EvaluatedAt,
-		)
-		if err != nil {
-			return fmt.Errorf("append to batch: %w", err)
-		}
-	}
-
-	return batch.Send()
+	return status, tcbStatus, errorMsg
 }
 
-func upsertOffset(ctx context.Context, ch clickhouse.Conn, block uint64, idx uint32) error {
-	return ch.Exec(ctx, clickdb.UpsertOffset, serviceName, block, idx)
+// checkAndRecordStatusChange tracks if a quote's status has changed
+func (e *QuoteEvaluator) checkAndRecordStatusChange(ctx context.Context,
+	serviceAddress, quoteHash, newStatus, newTCBStatus string) {
+
+	// Get the last evaluation
+	row := e.clickhouse.QueryRow(ctx, clickdb.GetLastEvaluation, serviceAddress, quoteHash)
+
+	var prevStatus, prevTCBStatus string
+	err := row.Scan(&prevStatus, &prevTCBStatus)
+
+	if err == nil && (prevStatus != newStatus || prevTCBStatus != newTCBStatus) {
+		// Status has changed, record it in history
+		if err := e.clickhouse.Exec(ctx, clickdb.InsertQuoteEvaluationHistory,
+			serviceAddress, quoteHash, prevStatus, newStatus, prevTCBStatus, newTCBStatus); err != nil {
+			logrus.WithError(err).Warn("Failed to record status change")
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"address":         serviceAddress,
+				"previous_status": prevStatus,
+				"new_status":      newStatus,
+				"previous_tcb":    prevTCBStatus,
+				"new_tcb":         newTCBStatus,
+			}).Info("Quote status changed")
+		}
+	}
+}
+
+// storeEvaluation saves the evaluation result to the database
+func (e *QuoteEvaluator) storeEvaluation(ctx context.Context,
+	serviceAddress, quoteHash string, quoteLen uint32,
+	status, tcbStatus, errorMsg string,
+	blockNumber uint64, logIndex uint32, blockTime time.Time,
+	quoteBytes []byte) error {
+
+	// Parse the quote to extract components (optional, for detailed tracking)
+	var fmspc string
+	var sgxComponents, tdxComponents []byte
+	var pceSvn uint16
+
+	parsed, err := e.parser.ParseQuote(quoteBytes)
+	if err == nil {
+		fmspc = parsed.FMSPC
+		// Extract TCB components if parsing succeeded
+		if (parsed.TCBComponents != tdx.TCBComponents{}) {
+			sgxComponents = parsed.TCBComponents.SGX[:]
+			tdxComponents = parsed.TCBComponents.TDX[:]
+			pceSvn = parsed.TCBComponents.PCESVN
+		}
+	}
+
+	// Store the evaluation
+	return e.clickhouse.Exec(ctx, clickdb.InsertQuoteEvaluation,
+		serviceAddress, quoteHash, quoteLen,
+		status, tcbStatus, errorMsg,
+		fmspc, sgxComponents, tdxComponents, pceSvn,
+		blockNumber, logIndex, blockTime)
+}
+
+// Helper function to check if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 &&
+		(s == substr || len(s) > len(substr) &&
+			(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+				findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

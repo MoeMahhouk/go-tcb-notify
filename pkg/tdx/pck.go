@@ -1,4 +1,4 @@
-package tdxutil
+package tdx
 
 import (
 	"crypto/x509"

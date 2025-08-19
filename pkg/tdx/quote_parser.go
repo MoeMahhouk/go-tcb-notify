@@ -8,8 +8,6 @@ import (
 	pb "github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tdx-guest/verify"
 	"github.com/sirupsen/logrus"
-
-	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdxutil"
 )
 
 // ParsedQuote represents a parsed TDX quote with extracted components
@@ -21,9 +19,9 @@ type ParsedQuote struct {
 
 // TCBComponents represents the TCB components needed for verification
 type TCBComponents struct {
-	SGXComponents [16]uint8
-	TDXComponents [16]uint8
-	PCESVN        uint16
+	SGX    [16]uint8
+	TDX    [16]uint8
+	PCESVN uint16
 }
 
 type QuoteParser struct{}
@@ -45,7 +43,7 @@ func (p *QuoteParser) ParseQuote(raw []byte) (*ParsedQuote, error) {
 		return nil, fmt.Errorf("unexpected quote type: %T", obj)
 	}
 
-	fmspc, comps, err := tdxutil.ExtractFromQuote(q)
+	fmspc, comps, err := ExtractFromQuote(q)
 	if err != nil {
 		return nil, fmt.Errorf("extract from quote: %w", err)
 	}
@@ -54,15 +52,15 @@ func (p *QuoteParser) ParseQuote(raw []byte) (*ParsedQuote, error) {
 		Quote: q,
 		FMSPC: fmspc,
 		TCBComponents: TCBComponents{
-			SGXComponents: comps.SGX,
-			TDXComponents: comps.TDX,
-			PCESVN:        comps.PCES,
+			SGX:    comps.SGX,
+			TDX:    comps.TDX,
+			PCESVN: comps.PCESVN,
 		},
 	}
 	logrus.WithFields(logrus.Fields{
 		"fmspc": fmspc,
-		"sgx":   hex.EncodeToString(out.TCBComponents.SGXComponents[:]),
-		"tdx":   hex.EncodeToString(out.TCBComponents.TDXComponents[:]),
+		"sgx":   hex.EncodeToString(out.TCBComponents.SGX[:]),
+		"tdx":   hex.EncodeToString(out.TCBComponents.TDX[:]),
 		"pces":  out.TCBComponents.PCESVN,
 	}).Debug("parsed TDX quote")
 	return out, nil

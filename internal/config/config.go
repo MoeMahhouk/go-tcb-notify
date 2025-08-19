@@ -13,7 +13,7 @@ import (
 
 type Config struct {
 	LogLevel string
-	Debug    bool // Add debug flag
+	Debug    bool
 
 	// Ethereum settings
 	Ethereum Ethereum
@@ -30,17 +30,19 @@ type Config struct {
 type Ethereum struct {
 	RPCURL          string
 	RegistryAddress common.Address
-	StartBlock      uint64 // Add start block
+	StartBlock      uint64
 }
 
 type ClickHouse struct {
+	// Native protocol addresses: host:port (comma-separated)
 	Addrs       []string
 	Database    string
 	Username    string
 	Password    string
 	DialTimeout time.Duration
 	Compression string // "lz4" or "none"
-	Secure      bool   // enable TLS (rare for native; default false)
+	Secure      bool   // enable TLS
+	SkipVerify  bool   // skip TLS verification
 }
 
 type IngestRegistry struct {
@@ -49,15 +51,19 @@ type IngestRegistry struct {
 }
 
 type EvaluateQuotes struct {
-	BatchSize int
+	BatchSize        int
+	PollInterval     time.Duration // How often to check for new quotes
+	GetCollateral    bool          // Whether to fetch collateral from Intel PCS
+	CheckRevocations bool          // Whether to check certificate revocations
 }
 
 type PCS struct {
-	BaseURL       string        // e.g. https://api.trustedservices.intel.com
-	APIKey        string        // Ocp-Apim-Subscription-Key (if required)
-	POLL_INTERVAL time.Duration // Polling interval for PCS updates
+	BaseURL       string        // Intel PCS API base URL
+	APIKey        string        // Optional API key
+	POLL_INTERVAL time.Duration // How often to refresh TCB info
 }
 
+// Helper functions
 func getenv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -110,29 +116,25 @@ func getBool(key string, def bool) bool {
 }
 
 func Load() (*Config, error) {
-	// Get RPC URL from multiple possible env vars
+	// RPC URL with multiple fallbacks
 	rpcURL := getenv("ETHEREUM_RPC_URL", getenv("RPC_URL", "http://localhost:8545"))
 
 	// Registry address
-	regAddr := getenv("REGISTRY_ADDRESS", "0x927Ea8b713123744E6E0a92f4417366B0B000dA5")
+	regAddr := getenv("REGISTRY_ADDRESS", "0x0000000000000000000000000000000000000000")
 	if !common.IsHexAddress(regAddr) {
-		return nil, fmt.Errorf("invalid REGISTRY_ADDRESS: %s", regAddr)
+		return nil, fmt.Errorf("invalid registry address: %s", regAddr)
 	}
 
-	// ClickHouse (native protocol)
-	chAddrs := strings.Split(getenv("CH_ADDRS", getenv("CLICKHOUSE_ADDRS", "clickhouse:9000")), ",")
-	for i := range chAddrs {
-		chAddrs[i] = strings.TrimSpace(chAddrs[i])
-	}
-
+	// ClickHouse configuration
 	ch := ClickHouse{
-		Addrs:       chAddrs,
-		Database:    getenv("CH_DATABASE", getenv("CLICKHOUSE_DATABASE", "go_tcb_notify")),
-		Username:    getenv("CH_USERNAME", getenv("CLICKHOUSE_USERNAME", "default")),
-		Password:    getenv("CH_PASSWORD", getenv("CLICKHOUSE_PASSWORD", "")),
-		DialTimeout: getDuration("CH_DIAL_TIMEOUT", getDuration("CLICKHOUSE_DIAL_TIMEOUT", 5*time.Second)),
-		Compression: strings.ToLower(getenv("CH_COMPRESSION", getenv("CLICKHOUSE_COMPRESSION", "lz4"))),
-		Secure:      getBool("CH_SECURE", getBool("CLICKHOUSE_SECURE", false)),
+		Addrs:       strings.Split(getenv("CH_ADDRS", "localhost:9000"), ","),
+		Database:    getenv("CH_DATABASE", "default"),
+		Username:    getenv("CH_USERNAME", "default"),
+		Password:    getenv("CH_PASSWORD", ""),
+		DialTimeout: getDuration("CH_DIAL_TIMEOUT", 5*time.Second),
+		Compression: getenv("CH_COMPRESSION", "lz4"),
+		Secure:      getBool("CH_SECURE", false),
+		SkipVerify:  getBool("CH_SKIP_VERIFY", false),
 	}
 
 	cfg := &Config{
@@ -148,19 +150,23 @@ func Load() (*Config, error) {
 		ClickHouse: ch,
 
 		IngestRegistry: IngestRegistry{
-			PollInterval: getDuration("INGEST_POLL_INTERVAL", 15*time.Minute),
-			BatchBlocks:  getUint64("INGEST_BATCH_BLOCKS", 2500),
+			PollInterval: getDuration("INGEST_POLL_INTERVAL", 15*time.Second),
+			BatchBlocks:  getUint64("INGEST_BATCH_BLOCKS", 128),
 		},
 
 		EvaluateQuotes: EvaluateQuotes{
-			BatchSize: getInt("EVAL_BATCH_SIZE", 500),
+			BatchSize:        getInt("EVAL_BATCH_SIZE", 500),
+			PollInterval:     getDuration("EVAL_POLL_INTERVAL", 5*time.Second),
+			GetCollateral:    getBool("EVAL_GET_COLLATERAL", true),    // Default to true for security
+			CheckRevocations: getBool("EVAL_CHECK_REVOCATIONS", true), // Default to true for security
 		},
 
 		PCS: PCS{
 			BaseURL:       getenv("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
 			APIKey:        getenv("PCS_API_KEY", ""),
-			POLL_INTERVAL: getDuration("PCS_POLL_INTERVAL", 15*time.Minute),
+			POLL_INTERVAL: getDuration("PCS_POLL_INTERVAL", 1*time.Hour),
 		},
 	}
+
 	return cfg, nil
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
-	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdxutil"
 	"github.com/google/go-tdx-guest/abi"
 	pb "github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tdx-guest/verify"
@@ -42,7 +41,7 @@ func (v *QuoteVerifier) ParseQuote(quoteBytes []byte) (*models.ParsedQuote, erro
 	}
 
 	// Use tdxutil to extract FMSPC and components
-	fmspc, comps, err := tdxutil.ExtractFromQuote(quote)
+	fmspc, comps, err := ExtractFromQuote(quote)
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to extract components from quote")
 		// Continue with partial data
@@ -57,7 +56,7 @@ func (v *QuoteVerifier) ParseQuote(quoteBytes []byte) (*models.ParsedQuote, erro
 		TCBComponents: models.TCBComponents{
 			SGXComponents: comps.SGX,
 			TDXComponents: comps.TDX,
-			PCESVN:        comps.PCES,
+			PCESVN:        comps.PCESVN,
 		},
 	}
 
@@ -204,4 +203,24 @@ func ExtractComponentDetails(components models.TCBComponents) []models.Component
 	}
 
 	return details
+}
+
+// ExtractFromQuote gathers (FMSPC, SGX[16], PCESVN) from PCK and TDX[16] from TD report.
+func ExtractFromQuote(q *pb.QuoteV4) (fmspcHex string, comps TCBComponents, err error) {
+	fmspcHex, err = ExtractFMSPCFromQuote(q)
+	if err != nil {
+		return "", comps, err
+	}
+	sgx16, pcesvn, err := ExtractSgxTcbAndPceSvnFromQuote(q)
+	if err != nil {
+		return "", comps, err
+	}
+	comps.SGX = sgx16
+	comps.PCESVN = pcesvn
+
+	tdxBytes := q.GetTdQuoteBody().GetTeeTcbSvn() // 16 bytes
+	for i := 0; i < 16 && i < len(tdxBytes); i++ {
+		comps.TDX[i] = tdxBytes[i]
+	}
+	return fmspcHex, comps, nil
 }
