@@ -83,7 +83,7 @@ type QuoteEvaluation struct {
 	QuoteLength    uint32        `json:"quote_length" db:"quote_length"`
 	Status         QuoteStatus   `json:"status" db:"status"`
 	TCBStatus      TCBStatus     `json:"tcb_status" db:"tcb_status"`
-	Error          string        `json:"error" db:"error"` // Alternative error field
+	ErrorMessage   string        `json:"error_message" db:"error_message"` // Alternative error field
 	FMSPC          string        `json:"fmspc" db:"fmspc"`
 	TCBComponents  TCBComponents `json:"tcb_components" db:"-"` // Not stored directly in DB
 	PCESVN         uint16        `json:"pce_svn" db:"pce_svn"`

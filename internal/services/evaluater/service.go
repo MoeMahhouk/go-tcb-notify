@@ -166,7 +166,7 @@ func (e *Evaluator) evaluateQuote(quote models.RegistryQuote) *models.QuoteEvalu
 	if err != nil {
 		evaluation.Status = models.StatusInvalidFormat
 		evaluation.TCBStatus = models.TCBStatusNotApplicable
-		evaluation.Error = err.Error()
+		evaluation.ErrorMessage = err.Error()
 		return evaluation
 	}
 
@@ -180,7 +180,7 @@ func (e *Evaluator) evaluateQuote(quote models.RegistryQuote) *models.QuoteEvalu
 	err = verify.TdxQuote(quote.QuoteBytes, e.verifyOpts)
 	if err != nil {
 		evaluation.Status = models.StatusInvalid
-		evaluation.Error = err.Error()
+		evaluation.ErrorMessage = err.Error()
 
 		// Determine TCB status from error
 		evaluation.TCBStatus = e.determineTCBStatus(err.Error())
@@ -252,12 +252,10 @@ func (e *Evaluator) storeEvaluation(ctx context.Context, eval *models.QuoteEvalu
 	// Convert components to storage format
 	sgxComponents := ""
 	tdxComponents := ""
-	pceSvn := uint16(0)
 
 	if eval.TCBComponents != (models.TCBComponents{}) {
 		sgxComponents = hex.EncodeToString(eval.TCBComponents.SGXComponents[:])
 		tdxComponents = hex.EncodeToString(eval.TCBComponents.TDXComponents[:])
-		pceSvn = eval.TCBComponents.PCESVN
 	}
 
 	return e.db.Exec(ctx, clickdb.InsertQuoteEvaluation,
@@ -266,13 +264,17 @@ func (e *Evaluator) storeEvaluation(ctx context.Context, eval *models.QuoteEvalu
 		eval.QuoteLength,
 		string(eval.Status),
 		string(eval.TCBStatus),
-		eval.Error,
+		eval.ErrorMessage,
 		eval.FMSPC,
 		sgxComponents,
 		tdxComponents,
-		pceSvn,
+		eval.TCBComponents.PCESVN,
 		eval.BlockNumber,
 		eval.LogIndex,
 		eval.BlockTime,
+		eval.MrTd,
+		eval.MrSeam,
+		eval.MrSignerSeam,
+		eval.ReportData,
 	)
 }

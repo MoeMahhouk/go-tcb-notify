@@ -228,16 +228,21 @@ func (e *QuoteEvaluator) storeEvaluation(ctx context.Context,
 
 	// Parse the quote to extract components (optional, for detailed tracking)
 	var fmspc string
-	var sgxComponents, tdxComponents []byte
+	var sgxComponents, tdxComponents string
 	var pceSvn uint16
+	var mrTd, mrSeam, mrSignerSeam, reportData string
 
 	parsed, err := e.parser.ParseQuote(quoteBytes)
 	if err == nil {
 		fmspc = parsed.FMSPC
+		mrTd = parsed.MrTd
+		mrSeam = parsed.MrSeam
+		mrSignerSeam = parsed.MrSignerSeam
+		reportData = parsed.ReportData
 		// Extract TCB components if parsing succeeded
 		if (parsed.TCBComponents != models.TCBComponents{}) {
-			sgxComponents = parsed.TCBComponents.SGXComponents[:]
-			tdxComponents = parsed.TCBComponents.TDXComponents[:]
+			sgxComponents = string(parsed.TCBComponents.SGXComponents[:])
+			tdxComponents = string(parsed.TCBComponents.TDXComponents[:])
 			pceSvn = parsed.TCBComponents.PCESVN
 		}
 	}
@@ -247,5 +252,6 @@ func (e *QuoteEvaluator) storeEvaluation(ctx context.Context,
 		serviceAddress, quoteHash, quoteLen,
 		status, tcbStatus, errorMsg,
 		fmspc, sgxComponents, tdxComponents, pceSvn,
-		blockNumber, logIndex, blockTime)
+		blockNumber, logIndex, blockTime,
+		mrTd, mrSeam, mrSignerSeam, reportData)
 }

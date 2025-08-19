@@ -93,7 +93,7 @@ func (v *QuoteVerifier) VerifyAndEvaluateQuote(quoteBytes []byte) (*models.Quote
 	parsedQuote, err := v.ParseQuote(quoteBytes)
 	if err != nil {
 		evaluation.Status = models.StatusInvalidFormat
-		evaluation.Error = err.Error()
+		evaluation.ErrorMessage = err.Error()
 		return evaluation, nil
 	}
 
@@ -115,7 +115,7 @@ func (v *QuoteVerifier) VerifyAndEvaluateQuote(quoteBytes []byte) (*models.Quote
 	quoteObj, err := abi.QuoteToProto(quoteBytes)
 	if err != nil {
 		evaluation.Status = models.StatusInvalidFormat
-		evaluation.Error = err.Error()
+		evaluation.ErrorMessage = err.Error()
 		return evaluation, nil
 	}
 
@@ -124,7 +124,7 @@ func (v *QuoteVerifier) VerifyAndEvaluateQuote(quoteBytes []byte) (*models.Quote
 	if err != nil {
 		// Parse error to determine status
 		evaluation.Status, evaluation.TCBStatus = v.parseVerificationError(err)
-		evaluation.Error = err.Error()
+		evaluation.ErrorMessage = err.Error()
 	} else {
 		evaluation.Status = models.StatusValid
 		evaluation.TCBStatus = models.TCBStatusUpToDate

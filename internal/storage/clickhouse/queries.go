@@ -37,8 +37,9 @@ const (
 		(service_address, quote_hash, quote_length, 
 		 status, tcb_status, error_message,
 		 fmspc, sgx_components, tdx_components, pce_svn,
-		 block_number, log_index, block_time, evaluated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now64())
+		 block_number, log_index, block_time, evaluated_at,
+		 mr_td, mr_seam, mr_signer_seam, report_data)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now64(), ?, ?, ?, ?)
 	`
 
 	// Track evaluation history (for tracking status changes)
@@ -100,8 +101,8 @@ const (
 	InsertTCBChangeAlert = `
 		INSERT INTO tcb_change_alerts
 		(fmspc, old_eval_number, new_eval_number, 
-		 change_type, affected_quotes_count, created_at)
-		VALUES (?, ?, ?, ?, ?, now64())
+		 change_type, affected_quotes_count, details, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, now64())
 	`
 
 	// Count registered quotes affected by FMSPC change

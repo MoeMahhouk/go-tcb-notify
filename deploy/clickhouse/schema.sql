@@ -34,7 +34,11 @@ CREATE TABLE IF NOT EXISTS tdx_quote_evaluations (
     block_number UInt64,
     log_index UInt32,
     block_time DateTime64(3),
-    evaluated_at DateTime64(3) DEFAULT now64(3)
+    evaluated_at DateTime64(3) DEFAULT now64(3),
+    mr_td String DEFAULT '',
+    mr_seam String DEFAULT '',
+    mr_signer_seam String DEFAULT '',
+    report_data String DEFAULT ''
 ) ENGINE = ReplacingMergeTree(evaluated_at)
 ORDER BY (service_address, quote_hash)
 PARTITION BY toYYYYMM(evaluated_at)

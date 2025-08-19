@@ -275,9 +275,11 @@ func (f *Fetcher) createAlertsForAffectedQuotes(ctx context.Context) {
 			"affected_quotes": affectedCount,
 		}).Warn("TCB update affects registered quotes")
 
-		// Create alert
+		// Create alert with details
+		details := fmt.Sprintf("TCB evaluation updated from %d to %d for FMSPC %s",
+			alert.OldEval, alert.NewEval, alert.FMSPC)
 		if err := f.createAlert(ctx, alert.FMSPC, alert.OldEval, alert.NewEval,
-			alert.ChangeType, affectedCount); err != nil {
+			alert.ChangeType, affectedCount, details); err != nil {
 			f.logger.WithError(err).Error("Failed to create alert")
 		}
 	}
@@ -293,9 +295,9 @@ func (f *Fetcher) countAffectedQuotes(ctx context.Context, fmspc string) uint32 
 
 // createAlert creates a TCB change alert
 func (f *Fetcher) createAlert(ctx context.Context, fmspc string, oldEval, newEval uint32,
-	changeType string, affectedCount uint32) error {
+	changeType string, affectedCount uint32, details string) error {
 	return f.db.Exec(ctx, clickdb.InsertTCBChangeAlert,
-		fmspc, oldEval, newEval, changeType, affectedCount,
+		fmspc, oldEval, newEval, changeType, affectedCount, details,
 	)
 }
 
