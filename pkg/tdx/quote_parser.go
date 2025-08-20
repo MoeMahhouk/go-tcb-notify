@@ -7,7 +7,6 @@ import (
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
 	tdxabi "github.com/google/go-tdx-guest/abi"
 	pb "github.com/google/go-tdx-guest/proto/tdx"
-	"github.com/google/go-tdx-guest/verify"
 	"github.com/sirupsen/logrus"
 )
 
@@ -51,15 +50,6 @@ func (p *QuoteParser) ParseQuote(raw []byte) (*models.ParsedQuote, error) {
 		"pces":  out.TCBComponents.PCESVN,
 	}).Debug("parsed TDX quote")
 	return out, nil
-}
-
-func (p *QuoteParser) VerifyQuoteSignature(quoteData []byte, getCollateral bool) error {
-	opts := verify.Options{
-		GetCollateral:    getCollateral,
-		CheckRevocations: false,
-	}
-	err := verify.TdxQuote(quoteData, &opts)
-	return err
 }
 
 func (p *QuoteParser) GetQuoteInfo(parsed *models.ParsedQuote) map[string]any {
