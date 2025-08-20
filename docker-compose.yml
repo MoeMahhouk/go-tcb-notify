@@ -45,14 +45,6 @@ services:
     command: ["/app/fetch-pcs"]
     restart: "no"
     
-  validate-quotes:
-    build: .
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    env_file: .env
-    command: ["/app/validate-quotes"]
-    restart: unless-stopped
 
 volumes:
   ch_data: {}

@@ -3,11 +3,9 @@ package evaluator
 import (
 	"context"
 	"encoding/hex"
-	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/google/go-tdx-guest/verify"
 	"github.com/sirupsen/logrus"
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
@@ -20,24 +18,19 @@ const ServiceName = "evaluate-quotes"
 
 // Evaluator handles TDX quote evaluation
 type Evaluator struct {
-	db         clickhouse.Conn
-	parser     *tdx.QuoteParser
-	config     *config.EvaluateQuotes
-	logger     *logrus.Entry
-	verifyOpts *verify.Options
+	db       clickhouse.Conn
+	verifier *tdx.QuoteVerifier
+	config   *config.EvaluateQuotes
+	logger   *logrus.Entry
 }
 
 // NewEvaluator creates a new quote evaluator service
 func NewEvaluator(db clickhouse.Conn, cfg *config.EvaluateQuotes) *Evaluator {
 	return &Evaluator{
-		db:     db,
-		parser: tdx.NewQuoteParser(),
-		config: cfg,
-		logger: logrus.WithField("service", ServiceName),
-		verifyOpts: &verify.Options{
-			GetCollateral:    cfg.GetCollateral,
-			CheckRevocations: cfg.CheckRevocations,
-		},
+		db:       db,
+		verifier: tdx.NewQuoteVerifier(cfg.GetCollateral, cfg.CheckRevocations),
+		config:   cfg,
+		logger:   logrus.WithField("service", ServiceName),
 	}
 }
 
@@ -151,60 +144,33 @@ func (e *Evaluator) evaluateQuotes(ctx context.Context, quotes []models.Registry
 
 // evaluateQuote evaluates a single quote
 func (e *Evaluator) evaluateQuote(quote models.RegistryQuote) *models.QuoteEvaluation {
-	evaluation := &models.QuoteEvaluation{
-		ServiceAddress: quote.ServiceAddress,
-		QuoteHash:      quote.QuoteHash,
-		QuoteLength:    quote.QuoteLength,
-		BlockNumber:    quote.BlockNumber,
-		LogIndex:       quote.LogIndex,
-		BlockTime:      quote.BlockTime,
-		EvaluatedAt:    time.Now(),
-	}
-
-	// Parse the quote
-	parsed, err := e.parser.ParseQuote(quote.QuoteBytes)
+	// Use QuoteVerifier's unified interface for verification and evaluation
+	evaluation, err := e.verifier.VerifyAndEvaluateQuote(quote.QuoteBytes)
 	if err != nil {
-		evaluation.Status = models.StatusInvalidFormat
-		evaluation.TCBStatus = models.TCBStatusNotApplicable
-		evaluation.ErrorMessage = err.Error()
-		return evaluation
+		// This shouldn't happen as VerifyAndEvaluateQuote handles errors internally
+		e.logger.WithError(err).Error("Unexpected error from QuoteVerifier")
+		return &models.QuoteEvaluation{
+			ServiceAddress: quote.ServiceAddress,
+			QuoteHash:      quote.QuoteHash,
+			QuoteLength:    quote.QuoteLength,
+			BlockNumber:    quote.BlockNumber,
+			LogIndex:       quote.LogIndex,
+			BlockTime:      quote.BlockTime,
+			EvaluatedAt:    time.Now(),
+			Status:         models.StatusInvalid,
+			TCBStatus:      models.TCBStatusNotApplicable,
+			ErrorMessage:   err.Error(),
+		}
 	}
 
-	// Extract components
-	evaluation.FMSPC = parsed.FMSPC
-	if parsed.TCBComponents != (models.TCBComponents{}) {
-		evaluation.TCBComponents = parsed.TCBComponents
-	}
-
-	// Verify the quote
-	err = verify.TdxQuote(quote.QuoteBytes, e.verifyOpts)
-	if err != nil {
-		evaluation.Status = models.StatusInvalid
-		evaluation.ErrorMessage = err.Error()
-
-		// Determine TCB status from error
-		evaluation.TCBStatus = e.determineTCBStatus(err.Error())
-	} else {
-		evaluation.Status = models.StatusValid
-		evaluation.TCBStatus = models.TCBStatusUpToDate
-	}
+	// Add blockchain metadata that QuoteVerifier doesn't know about
+	evaluation.ServiceAddress = quote.ServiceAddress
+	evaluation.BlockNumber = quote.BlockNumber
+	evaluation.LogIndex = quote.LogIndex
+	evaluation.BlockTime = quote.BlockTime
+	evaluation.EvaluatedAt = time.Now()
 
 	return evaluation
-}
-
-// determineTCBStatus determines TCB status from verification error
-func (e *Evaluator) determineTCBStatus(errMsg string) models.TCBStatus {
-	// Simple heuristic based on error message
-	switch {
-	case strings.Contains(errMsg, "TCB"):
-		return models.TCBStatusOutOfDate
-	case strings.Contains(errMsg, "revoked"):
-		return models.TCBStatusRevoked
-	case strings.Contains(errMsg, "configuration"):
-		return models.TCBStatusConfigurationNeeded
-	default:
-		return models.TCBStatusUnknown
-	}
 }
 
 // checkAndRecordStatusChange checks if a quote's status has changed
