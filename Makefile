@@ -16,7 +16,6 @@ BINDINGS_TYPE ?= FlashtestationRegistry
 BIN_INGEST   := bin/ingest-registry
 BIN_PCS      := bin/fetch-pcs
 BIN_EVAL     := bin/evaluate-quotes
-BIN_VALIDATE := bin/validate-quotes
 
 .PHONY: all bindings build tidy up down clean build-contracts check-tools schema
 
@@ -49,7 +48,6 @@ build:
 	go build -o $(BIN_INGEST) ./cmd/ingest-registry
 	go build -o $(BIN_PCS)    ./cmd/fetch-pcs
 	go build -o $(BIN_EVAL)   ./cmd/evaluate-quotes
-	go build -o $(BIN_VALIDATE) ./cmd/validate-quotes
 
 tidy:
 	go mod tidy
