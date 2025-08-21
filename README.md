@@ -1,99 +1,129 @@
-# go-tcb-notify (ETL/Pipeline Edition)
+# go-tcb-notify
 
-A small set of Go services that ingest TDX attestation registrations from the **FlashtestationRegistry** smart contract, fetch Intel **TDX TCB** information from the public PCS API, and evaluate quotes against the latest TCB levels. Results are written to **ClickHouse** for downstream consumers (dashboards, alert workers, etc).
+> **⚠️ DRAFT STATUS**: This project is currently in draft mode and under active development. The architecture, APIs, and implementation details may change drastically before being ready for production use.
 
-> This refactor removes direct webhooks and moves to a storage‑centric pipeline. Each step is its own process.
+An ETL pipeline for monitoring Intel TDX TCB updates and evaluating TDX attestation quotes from the Flashtestation protocol. The system provides automated monitoring and alerting when Intel updates TCB requirements that affect previously valid attestations.
+
+## Overview
+
+When Intel updates TDX TCB requirements due to security vulnerabilities or patches, previously valid TDX attestations may become outdated. This system monitors these changes and evaluates quote validity in real-time using a storage-centric architecture built on ClickHouse.
 
 ## Components
 
-- **ingest-registry**: scans Ethereum logs from `FlashtestationRegistry` and stores raw events in ClickHouse.
-- **fetch-pcs**: periodically fetches FMSPCs and TDX TCB info from Intel PCS and stores raw JSON.
-- **evaluate-quotes**: computes each address’s latest status by parsing quotes and comparing against the newest TCB.
+- **ingest-registry**: Monitors FlashtestationRegistry smart contract events and stores raw quote data
+- **fetch-pcs**: Retrieves TCB information from Intel PCS API and detects updates
+- **evaluate-quotes**: Validates TDX quotes against current TCB requirements
 
-## Why ClickHouse?
+## Quick Start
 
-ClickHouse offers fast, columnar analytics and easy upserts with `ReplacingMergeTree`. We keep raw, append‑only logs and derive “latest” views using simple queries (`argMax`) or periodic materialization.
+### Prerequisites
+- Go 1.24+
+- Docker and Docker Compose
+- `abigen`, `forge`, and `jq` (for contract bindings)
 
-## Build
-
-- Requires Go **1.24+**, `abigen`, `forge`, and `jq` if you want to (re)generate bindings.
-
-```bash
-# generate bindings from your flashtestations repo (submodule or sibling)
-make bindings
-
-# build binaries
-make build
-```
-
-The binaries will be placed in `./bin`.
-
-## Run (Docker)
+### Run with Docker
 
 ```bash
+# Clone and setup
+git clone <repository-url>
+cd go-tcb-notify
+cp .env.example .env
+# Edit .env with your configuration
+
+# Start all services
 docker compose up --build -d
 ```
 
-This starts ClickHouse and runs all three processes.
+This starts ClickHouse and all pipeline services with proper dependencies.
 
-### Services & env
+### Development Build
 
-- **ingest-registry**
-  - `ETHEREUM_RPC_URL` – your RPC (we set the experimental endpoint in compose).
-  - `REGISTRY_ADDRESS` – FlashtestationRegistry address.
-  - `START_BLOCK`, `BATCH_SIZE`, `POLL_INTERVAL` – scan controls.
-- **fetch-pcs**
-  - `PCS_BASE_URL` – defaults to Intel's public PCS (`https://api.trustedservices.intel.com`).
-  - `FMSPC_REFRESH`, `TCB_REFRESH` – how often to refresh lists.
-- **evaluate-quotes**
-  - `EVALUATE_INTERVAL` – evaluation cadence.
+```bash
+# Generate contract bindings (if needed)
+make bindings
 
-All services read ClickHouse from `CLICKHOUSE_DSN` (e.g. `clickhouse://user:pass@host:9000/db?secure=false`).
+# Build all services
+make build
 
-> DSN is the simplest approach. The driver also supports programmatic options; we keep all config centralized in `internal/config`.
+# Run individual services
+./bin/ingest-registry
+./bin/fetch-pcs
+./bin/evaluate-quotes
+```
 
-## Database layout
+## Configuration
 
-Created automatically by the services on startup:
+Configuration is managed through environment variables. Key settings:
 
-- `registry_events_raw` — append‑only on‑chain events:
-  - `contract_address`, `event`, `tee_address`, `quote_hex`, `override`, `block_number`, `log_index`, `tx_hash`, `ts`
-- `registry_quotes_current` — “latest quote per address” view maintained by the evaluator.
-- `tdx_tcb_info` — Intel PCS TCB JSON (versioned by `eval_number`).
-- `tdx_quote_status` — computed status per address over time.
-- `pipeline_state` — last processed block for the registry ingestor.
+```bash
+# Ethereum
+ETHEREUM_RPC_URL=http://your-rpc-endpoint:8545
+REGISTRY_ADDRESS=0x0000000000000000000000000000000000000000
+START_BLOCK=0
 
-Using `ReplacingMergeTree` keeps things simple and avoids accidental duplicates during retries.
+# ClickHouse (Native Protocol)
+CH_ADDRS=clickhouse:9000
+CH_DATABASE=default
+CH_USERNAME=default
+CH_PASSWORD=
 
-## Bindings from your contracts
+# Service intervals
+INGEST_POLL_INTERVAL=15s
+INGEST_BATCH_BLOCKS=128
+EVAL_POLL_INTERVAL=60s
+EVAL_GET_COLLATERAL=true
+EVAL_CHECK_REVOCATIONS=true
+PCS_POLL_INTERVAL=1h
+```
 
-We don’t hardcode an ABI. Instead, we generate type‑safe Go bindings from your **flashtestations** repo via `abigen`:
+See `.env.example` for complete configuration options.
 
+## Monitoring
+
+The system stores all data in ClickHouse, enabling flexible monitoring and alerting:
+
+```sql
+-- Check quotes needing attention
+SELECT service_address, current_tcb_status, tcb_updated_at
+FROM quotes_needing_reevaluation_due_to_tcb
+WHERE tcb_updated_at > now() - INTERVAL 1 HOUR;
+
+-- Monitor processing rates
+SELECT toStartOfHour(ingested_at) as hour, count() as quotes_processed
+FROM registry_quotes_raw
+WHERE ingested_at > now() - INTERVAL 24 HOUR
+GROUP BY hour;
+```
+
+## Architecture
+
+For detailed architecture information, database schema, API specifications, and deployment guidance, see [docs/architecture.md](docs/architecture.md).
+
+## Development
+
+### Project Structure
+```
+├── cmd/                    # Service entry points
+├── internal/               # Internal packages
+├── pkg/                   # Public packages
+├── deploy/                # Deployment configurations
+└── docs/                  # Documentation
+```
+
+### Contract Bindings
+
+When the FlashtestationRegistry contract changes:
 ```bash
 make bindings
 ```
 
-The target extracts the `.abi` section from the Foundry artifact and writes `internal/registry/bindings/registry.go`.
+## License
 
-## Configuration
+MIT License - see [LICENSE](LICENSE) file for details.
 
-All env vars are loaded via `internal/config` and shared across commands:
+## References
 
-- ClickHouse: `CLICKHOUSE_DSN` **(preferred)** or `CLICKHOUSE_ADDR`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_SECURE`, `CLICKHOUSE_SKIP_VERIFY`.
-- Ethereum: `ETHEREUM_RPC_URL` (or `RPC_URL`), `REGISTRY_ADDRESS`, `START_BLOCK`, `BATCH_SIZE`, `POLL_INTERVAL`.
-- Intel PCS: `PCS_BASE_URL`, `FMSPC_REFRESH`, `TCB_REFRESH`.
-- Evaluator: `EVALUATE_INTERVAL`.
-
-## Program flow
-
-1. **ingest-registry** uses the generated filterer to read:
-   - `TEEServiceRegistered(address addr, bytes quote, bool override)`
-   - `TEEServiceInvalidated(address addr)`
-   and stores them in `registry_events_raw` (with `block_number`, `log_index`, `tx_hash` for provenance & dedup).
-2. **fetch-pcs** reads FMSPC list from `/sgx/certification/v4/fmspcs?platform=all` and for each value fetches `/tdx/certification/v4/tcb?fmspc=…`. It stores the whole JSON document.
-3. **evaluate-quotes** picks the latest quote per address with an `argMax` trick, parses the quote (using your existing `pkg/tdx` utilities), compares components against the latest TCB levels, and writes a status row + the latest quote view.
-
-## Notes
-
-- Leave alerting/automation to downstream consumers watching `tdx_quote_status` (or create a separate alert worker).
-- If you need more normalization later (e.g., expanding TCB levels into columns), ClickHouse can ingest from the raw JSON with JSON functions or use a Materialized View.
+- [Architecture Documentation](docs/architecture.md)
+- [Intel TDX PCS API](https://api.portal.trustedservices.intel.com/content/documentation.html)
+- [Flashtestation Specification](https://github.com/flashbots/rollup-boost/blob/main/specs/flashtestations.md)
+- [go-tdx-guest Library](https://github.com/google/go-tdx-guest)
