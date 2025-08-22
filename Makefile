@@ -60,7 +60,7 @@ up:
 	docker compose up --build -d
 
 down:
-	docker compose down
+	docker compose down -v
 
 clean:
 	rm -rf bin
