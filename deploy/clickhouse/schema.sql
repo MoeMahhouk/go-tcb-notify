@@ -78,12 +78,12 @@ COMMENT 'All FMSPCs available from Intel PCS';
 CREATE TABLE IF NOT EXISTS pcs_tcb_info (
     fmspc String,
     tcb_evaluation_data_number UInt32,
-    issue_date DateTime64(3),
-    next_update DateTime64(3),
+    issue_date Date,
+    next_update Date,
     tcb_type UInt32 DEFAULT 0,
-    tcb_levels_json String,  -- JSON array of TCB levels
+    tcb_levels_json String DEFAULT '',  -- JSON array of TCB levels
     raw_json String,  -- Complete response from Intel
-    fetched_at DateTime64(3) DEFAULT now64(3)
+    fetched_at DateTime64(3, UTC) DEFAULT now64(3)
 ) ENGINE = MergeTree()  -- Not ReplacingMergeTree - we want history
 ORDER BY (fmspc, tcb_evaluation_data_number, fetched_at)
 PARTITION BY fmspc
@@ -126,20 +126,23 @@ COMMENT 'Tracks last processed block for each service';
 
 -- Current invalid quotes (for alert systems)
 CREATE MATERIALIZED VIEW IF NOT EXISTS invalid_quotes_current
-ENGINE = AggregatingMergeTree()
+ENGINE = MergeTree()
 ORDER BY (service_address, last_evaluated)
 POPULATE AS
-SELECT
-    service_address,
-    argMax(quote_hash, evaluated_at) as quote_hash,
-    argMax(status, evaluated_at) as status,
-    argMax(tcb_status, evaluated_at) as tcb_status,
-    argMax(error_message, evaluated_at) as error_message,
-    argMax(fmspc, evaluated_at) as fmspc,
-    max(evaluated_at) as last_evaluated
-FROM tdx_quote_evaluations
-WHERE status = 'Invalid'
-GROUP BY service_address;
+WITH latest_evaluations AS (
+    SELECT
+        service_address,
+        argMax(quote_hash, evaluated_at) as quote_hash,
+        argMax(status, evaluated_at) as status,
+        argMax(tcb_status, evaluated_at) as tcb_status,
+        argMax(error_message, evaluated_at) as error_message,
+        argMax(fmspc, evaluated_at) as fmspc,
+        max(evaluated_at) as last_evaluated
+    FROM tdx_quote_evaluations
+    GROUP BY service_address
+)
+SELECT * FROM latest_evaluations
+WHERE status = 'Invalid';
 
 -- Recent status changes (last 24 hours)
 CREATE MATERIALIZED VIEW IF NOT EXISTS recent_status_changes
@@ -171,9 +174,9 @@ ENGINE = AggregatingMergeTree()
 ORDER BY (fmspc, last_tcb_update)
 POPULATE AS
 SELECT
-    r.service_address,
-    r.fmspc,
-    argMax(r.quote_hash, r.block_number) as quote_hash,
+    r.service_address as service_address,
+    r.fmspc as fmspc,
+    argMax(r.quote_sha256, r.block_number) as quote_hash,
     argMax(e.status, e.evaluated_at) as current_status,
     argMax(e.tcb_status, e.evaluated_at) as current_tcb_status,
     max(t.tcb_evaluation_data_number) as latest_tcb_eval_number,
