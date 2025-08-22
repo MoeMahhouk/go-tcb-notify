@@ -1,30 +1,22 @@
 FROM golang:1.24.5-alpine AS builder
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates build-base
 
-WORKDIR /app
-
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates
-
-# Copy go mod files
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/ingest-registry ./cmd/ingest-registry && \
+    CGO_ENABLED=0 GOOS=linux go build -o /out/fetch-pcs      ./cmd/fetch-pcs && \
+    CGO_ENABLED=0 GOOS=linux go build -o /out/evaluate-quotes ./cmd/evaluate-quotes
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o go-tcb-notify ./cmd/go-tcb-notify
-
+# ---- runtime stage ----
 FROM alpine:latest
-
 RUN apk --no-cache add ca-certificates tzdata
-WORKDIR /root/
+WORKDIR /app
+COPY --from=builder /out/ingest-registry /app/ingest-registry
+COPY --from=builder /out/fetch-pcs      /app/fetch-pcs
+COPY --from=builder /out/evaluate-quotes /app/evaluate-quotes
 
-# Copy the binary from builder
-COPY --from=builder /app/go-tcb-notify .
-COPY --from=builder /app/.env .
-
-# Expose port
-EXPOSE 8080
-
-CMD ["./go-tcb-notify"]
+# Default is no-op; docker-compose will override command per service.
+CMD ["/bin/sh", "-lc", "echo 'Provide a command (ingest-registry | fetch-pcs | evaluate-quotes)' && sleep 1"]
