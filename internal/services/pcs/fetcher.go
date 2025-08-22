@@ -166,23 +166,39 @@ func (f *Fetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) (bool,
 		return false, fmt.Errorf("unmarshal TCB info: %w", err)
 	}
 
-	// Check if updated
+	// Check if updated (or if this is the first time we're storing this FMSPC)
 	updated := tcbInfo.TCBEvaluationDataNumber > currentEvalNum
+	isFirstTime := err == ErrNotFound
 
-	// Store TCB info
-	if err := f.storeTCBInfo(ctx, fmspc, tcbResp); err != nil {
-		return false, fmt.Errorf("store TCB info: %w", err)
+	// Always store TCB info if it's new or updated
+	if updated || isFirstTime {
+		if err := f.storeTCBInfo(ctx, fmspc, tcbResp); err != nil {
+			return false, fmt.Errorf("store TCB info: %w", err)
+		}
+
+		if isFirstTime {
+			f.logger.WithFields(logrus.Fields{
+				"fmspc":    fmspc,
+				"eval_num": tcbInfo.TCBEvaluationDataNumber,
+			}).Info("Stored new TCB info for FMSPC")
+		} else if updated && currentEvalNum > 0 {
+			f.logger.WithFields(logrus.Fields{
+				"fmspc":    fmspc,
+				"old_eval": currentEvalNum,
+				"new_eval": tcbInfo.TCBEvaluationDataNumber,
+			}).Info("TCB update detected")
+		}
+
+		return true, nil
 	}
 
-	if updated && currentEvalNum > 0 {
-		f.logger.WithFields(logrus.Fields{
-			"fmspc":    fmspc,
-			"old_eval": currentEvalNum,
-			"new_eval": tcbInfo.TCBEvaluationDataNumber,
-		}).Info("TCB update detected")
-	}
+	f.logger.WithFields(logrus.Fields{
+		"fmspc":        fmspc,
+		"current_eval": currentEvalNum,
+		"fetched_eval": tcbInfo.TCBEvaluationDataNumber,
+	}).Debug("TCB info already up to date, skipping")
 
-	return updated, nil
+	return false, nil
 }
 
 // storeFMSPC stores an FMSPC in the database
@@ -206,15 +222,24 @@ func (f *Fetcher) storeTCBInfo(ctx context.Context, fmspc string, tcbResp *model
 		return fmt.Errorf("unmarshal TCB info: %w", err)
 	}
 
+	rawJSON, err := json.Marshal(tcbResp)
+	if err != nil {
+		return fmt.Errorf("marshal raw response: %w", err)
+	}
+
+	// Convert TCB levels to JSON string for storage
 	tcbLevelsJSON, err := json.Marshal(tcbInfo.TCBLevels)
 	if err != nil {
 		return fmt.Errorf("marshal TCB levels: %w", err)
 	}
 
-	rawJSON, err := json.Marshal(tcbResp)
-	if err != nil {
-		return fmt.Errorf("marshal raw response: %w", err)
-	}
+	f.logger.WithFields(logrus.Fields{
+		"fmspc":       strings.ToUpper(fmspc),
+		"eval_num":    tcbInfo.TCBEvaluationDataNumber,
+		"tcb_type":    tcbInfo.TCBType,
+		"issue_date":  tcbInfo.IssueDate,
+		"next_update": tcbInfo.NextUpdate,
+	}).Debug("Storing TCB info")
 
 	return f.db.Exec(ctx, clickdb.InsertPCSTCBInfo,
 		strings.ToUpper(fmspc),
@@ -232,6 +257,10 @@ func (f *Fetcher) getCurrentEvalNumber(ctx context.Context, fmspc string) (uint3
 	var evalNum uint32
 	row := f.db.QueryRow(ctx, clickdb.CheckTCBUpdate, fmspc)
 	if err := row.Scan(&evalNum); err != nil {
+		// Check if it's a "no rows" error, which means this FMSPC doesn't exist yet
+		if strings.Contains(err.Error(), "no rows") || strings.Contains(err.Error(), "EOF") {
+			return 0, ErrNotFound
+		}
 		return 0, err
 	}
 	return evalNum, nil
