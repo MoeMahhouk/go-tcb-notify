@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"sort"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -156,14 +157,49 @@ type Event struct {
 
 // fetchEvents fetches events from the registry
 func (i *Ingester) fetchEvents(ctx context.Context, from, to uint64) ([]Event, error) {
+	var events []Event
+
 	// Fetch TEEServiceRegistered events
+	regEvents, err := i.fetchRegistrationEvents(ctx, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("fetch registration events: %w", err)
+	}
+	events = append(events, regEvents...)
+
+	// Fetch TEEServiceInvalidated events
+	invEvents, err := i.fetchInvalidationEvents(ctx, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("fetch invalidation events: %w", err)
+	}
+	events = append(events, invEvents...)
+
+	// Sort events by block number and log index for proper ordering
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].BlockNumber != events[j].BlockNumber {
+			return events[i].BlockNumber < events[j].BlockNumber
+		}
+		return events[i].LogIndex < events[j].LogIndex
+	})
+
+	// Update last processed position from the last event
+	if len(events) > 0 {
+		lastEvent := events[len(events)-1]
+		i.lastBlock = lastEvent.BlockNumber
+		i.lastIdx = lastEvent.LogIndex
+	}
+
+	return events, nil
+}
+
+// fetchRegistrationEvents fetches TEEServiceRegistered events
+func (i *Ingester) fetchRegistrationEvents(ctx context.Context, from, to uint64) ([]Event, error) {
 	iter, err := i.registry.FilterTEEServiceRegistered(&bind.FilterOpts{
 		Start:   from,
 		End:     &to,
 		Context: ctx,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("filter events: %w", err)
+		return nil, fmt.Errorf("filter registration events: %w", err)
 	}
 	defer iter.Close()
 
@@ -187,14 +223,51 @@ func (i *Ingester) fetchEvents(ctx context.Context, from, to uint64) ([]Event, e
 			TxHash:      lg.TxHash,
 			BlockTime:   time.Unix(int64(header.Time), 0).UTC(),
 		})
-
-		// Update last processed position
-		i.lastBlock = lg.BlockNumber
-		i.lastIdx = uint(lg.Index)
 	}
 
 	if err := iter.Error(); err != nil {
-		return nil, fmt.Errorf("iterator error: %w", err)
+		return nil, fmt.Errorf("registration iterator error: %w", err)
+	}
+
+	return events, nil
+}
+
+// fetchInvalidationEvents fetches TEEServiceInvalidated events
+func (i *Ingester) fetchInvalidationEvents(ctx context.Context, from, to uint64) ([]Event, error) {
+	iter, err := i.registry.FilterTEEServiceInvalidated(&bind.FilterOpts{
+		Start:   from,
+		End:     &to,
+		Context: ctx,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("filter invalidation events: %w", err)
+	}
+	defer iter.Close()
+
+	var events []Event
+	for iter.Next() {
+		ev := iter.Event
+		lg := ev.Raw
+
+		// Get block timestamp
+		header, err := i.ethClient.HeaderByNumber(ctx, big.NewInt(int64(lg.BlockNumber)))
+		if err != nil {
+			return nil, fmt.Errorf("get block header: %w", err)
+		}
+
+		events = append(events, Event{
+			Type:        "TEEServiceInvalidated",
+			TeeAddress:  ev.TeeAddress,
+			RawQuote:    nil, // No quote data for invalidation events
+			BlockNumber: lg.BlockNumber,
+			LogIndex:    uint(lg.Index),
+			TxHash:      lg.TxHash,
+			BlockTime:   time.Unix(int64(header.Time), 0).UTC(),
+		})
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("invalidation iterator error: %w", err)
 	}
 
 	return events, nil
@@ -202,6 +275,18 @@ func (i *Ingester) fetchEvents(ctx context.Context, from, to uint64) ([]Event, e
 
 // processEvent processes a single registry event
 func (i *Ingester) processEvent(ctx context.Context, event Event) error {
+	switch event.Type {
+	case "TEEServiceRegistered":
+		return i.processRegistrationEvent(ctx, event)
+	case "TEEServiceInvalidated":
+		return i.processInvalidationEvent(ctx, event)
+	default:
+		return fmt.Errorf("unknown event type: %s", event.Type)
+	}
+}
+
+// processRegistrationEvent processes a TEEServiceRegistered event
+func (i *Ingester) processRegistrationEvent(ctx context.Context, event Event) error {
 	// Calculate quote hash
 	sum := sha256.Sum256(event.RawQuote)
 	quoteHash := hex.EncodeToString(sum[:])
@@ -212,17 +297,30 @@ func (i *Ingester) processEvent(ctx context.Context, event Event) error {
 		fmspc = parsed.FMSPC
 	}
 
-	// Store in database
+	// Store in database with event_type = 'Registered'
 	return i.db.Exec(ctx, clickdb.InsertQuoteRaw,
 		event.TeeAddress.Hex(),
 		event.BlockNumber,
 		event.BlockTime,
 		event.TxHash.Hex(),
 		uint32(event.LogIndex),
+		"Registered",                       // event_type
 		hex.EncodeToString(event.RawQuote), // Store as hex string
 		uint32(len(event.RawQuote)),
 		quoteHash,
 		fmspc,
+	)
+}
+
+// processInvalidationEvent processes a TEEServiceInvalidated event
+func (i *Ingester) processInvalidationEvent(ctx context.Context, event Event) error {
+	// Store invalidation event in database
+	return i.db.Exec(ctx, clickdb.InsertInvalidationEvent,
+		event.TeeAddress.Hex(),
+		event.BlockNumber,
+		event.BlockTime,
+		event.TxHash.Hex(),
+		uint32(event.LogIndex),
 	)
 }
 

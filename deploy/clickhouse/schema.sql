@@ -9,15 +9,16 @@ CREATE TABLE IF NOT EXISTS registry_quotes_raw (
     block_time DateTime64(3),
     tx_hash String,
     log_index UInt32,
-    quote_bytes String,  -- Hex encoded quote
-    quote_len UInt32,
-    quote_sha256 String,
+    event_type Enum('Registered' = 1, 'Invalidated' = 2),
+    quote_bytes String DEFAULT '',  -- Hex encoded quote (empty for invalidation events)
+    quote_len UInt32 DEFAULT 0,
+    quote_sha256 String DEFAULT '',
     fmspc String DEFAULT '',  -- Extracted FMSPC for easier querying
     ingested_at DateTime64(3) DEFAULT now64(3)
 ) ENGINE = MergeTree()
 ORDER BY (service_address, block_number, log_index)
 PARTITION BY toYYYYMM(block_time)
-COMMENT 'Raw TDX quotes ingested from blockchain registry';
+COMMENT 'All registry events (registrations and invalidations) from blockchain';
 
 -- Quote evaluation results (latest status per quote)
 CREATE TABLE IF NOT EXISTS tdx_quote_evaluations (
@@ -172,18 +173,28 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS affected_quotes_by_tcb_update
 ENGINE = AggregatingMergeTree()
 ORDER BY (fmspc, last_tcb_update)
 POPULATE AS
+WITH latest_events AS (
+    SELECT 
+        service_address,
+        argMax(event_type, block_number) as latest_event_type,
+        argMax(fmspc, block_number) as fmspc,
+        argMax(quote_sha256, block_number) as quote_hash
+    FROM registry_quotes_raw
+    GROUP BY service_address
+)
 SELECT
     r.service_address as service_address,
     r.fmspc as fmspc,
-    argMax(r.quote_sha256, r.block_number) as quote_hash,
+    r.quote_hash as quote_hash,
     argMax(e.status, e.evaluated_at) as current_status,
     argMax(e.tcb_status, e.evaluated_at) as current_tcb_status,
     max(t.tcb_evaluation_data_number) as latest_tcb_eval_number,
     max(t.fetched_at) as last_tcb_update
-FROM registry_quotes_raw r
+FROM latest_events r
 JOIN pcs_tcb_info t ON r.fmspc = t.fmspc
 LEFT JOIN tdx_quote_evaluations e ON r.service_address = e.service_address
-GROUP BY r.service_address, r.fmspc;
+WHERE r.latest_event_type = 'Registered'  -- Only include non-invalidated quotes
+GROUP BY r.service_address, r.fmspc, r.quote_hash;
 
 -- Alert view: Quotes that need re-evaluation due to TCB updates
 CREATE VIEW IF NOT EXISTS quotes_needing_reevaluation_due_to_tcb AS

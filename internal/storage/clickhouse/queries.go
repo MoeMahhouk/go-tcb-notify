@@ -7,17 +7,37 @@ const (
 
 	InsertQuoteRaw = `
 		INSERT INTO registry_quotes_raw
-		(service_address, block_number, block_time, tx_hash, log_index, 
+		(service_address, block_number, block_time, tx_hash, log_index, event_type,
 		 quote_bytes, quote_len, quote_sha256, fmspc, ingested_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now64())
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now64())
+	`
+
+	InsertInvalidationEvent = `
+		INSERT INTO registry_quotes_raw
+		(service_address, block_number, block_time, tx_hash, log_index, event_type, ingested_at)
+		VALUES (?, ?, ?, ?, ?, 'Invalidated', now64())
 	`
 
 	// ===================
 	// Quote Evaluation (used by evaluate-quotes)
 	// ===================
 
-	// Get ALL currently registered quotes for evaluation
+	// Get ALL currently active (non-invalidated) quotes for evaluation
 	GetAllRegisteredQuotes = `
+		WITH latest_events AS (
+			SELECT 
+				service_address,
+				argMax(event_type, block_number) as latest_event_type,
+				argMax(block_number, block_number) as block_number,
+				argMax(block_time, block_number) as block_time,
+				argMax(tx_hash, block_number) as tx_hash,
+				argMax(log_index, block_number) as log_index,
+				argMax(quote_bytes, block_number) as quote_bytes,
+				argMax(quote_len, block_number) as quote_len,
+				argMax(quote_sha256, block_number) as quote_sha256
+			FROM registry_quotes_raw
+			GROUP BY service_address
+		)
 		SELECT 
 			service_address, 
 			block_number, 
@@ -27,8 +47,24 @@ const (
 			quote_bytes, 
 			quote_len, 
 			quote_sha256
-		FROM registry_quotes_raw
+		FROM latest_events
+		WHERE latest_event_type = 'Registered'
 		ORDER BY service_address, block_number DESC
+	`
+	// Count registered quotes affected by FMSPC change (only active quotes)
+	CountAffectedRegisteredQuotes = `
+		WITH latest_events AS (
+			SELECT 
+				service_address,
+				argMax(event_type, block_number) as latest_event_type,
+				argMax(fmspc, block_number) as fmspc
+			FROM registry_quotes_raw
+			WHERE fmspc = ?
+			GROUP BY service_address
+		)
+		SELECT COUNT(*)
+		FROM latest_events
+		WHERE latest_event_type = 'Registered'
 	`
 
 	// Insert or update evaluation result
@@ -93,13 +129,6 @@ const (
 		(fmspc, old_eval_number, new_eval_number, 
 		 affected_quotes_count, details, created_at)
 		VALUES (?, ?, ?, ?, ?, now64())
-	`
-
-	// Count registered quotes affected by FMSPC change
-	CountAffectedRegisteredQuotes = `
-		SELECT COUNT(DISTINCT service_address)
-		FROM registry_quotes_raw
-		WHERE fmspc = ?
 	`
 
 	// ===================
