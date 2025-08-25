@@ -10,24 +10,24 @@ import (
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 )
 
-func Open(ctx context.Context, c *config.ClickHouse) (clickhouse.Conn, error) {
+func Open(ctx context.Context, cfg *config.ClickHouse) (clickhouse.Conn, error) {
 	opts := &clickhouse.Options{
 		Protocol:    clickhouse.Native,
-		Addr:        c.Addrs,
-		DialTimeout: c.DialTimeout,
+		Addr:        cfg.Addrs,
+		DialTimeout: cfg.DialTimeout,
 		Auth: clickhouse.Auth{
-			Database: c.Database,
-			Username: c.Username,
-			Password: c.Password,
+			Database: cfg.Database,
+			Username: cfg.Username,
+			Password: cfg.Password,
 		},
 		Settings: clickhouse.Settings{
 			"max_execution_time": 60,
 		},
 		Compression: &clickhouse.Compression{
-			Method: compressionMethod(c.Compression),
+			Method: compressionMethod(cfg.Compression),
 		},
 	}
-	if c.Secure {
+	if cfg.Secure {
 		opts.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 	conn, err := clickhouse.Open(opts)
