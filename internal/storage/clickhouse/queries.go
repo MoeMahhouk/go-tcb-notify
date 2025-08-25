@@ -78,16 +78,6 @@ const (
 		VALUES (?, ?, ?, ?, ?, ?, ?, now64())
 	`
 
-	// Get latest TCB info for an FMSPC
-	GetLatestTCBInfo = `
-		SELECT 
-			fmspc, tcb_evaluation_data_number, tcb_levels_json, raw_json
-		FROM pcs_tcb_info
-		WHERE fmspc = ?
-		ORDER BY tcb_evaluation_data_number DESC
-		LIMIT 1
-	`
-
 	// Check if TCB has been updated for an FMSPC
 	CheckTCBUpdate = `
 		SELECT tcb_evaluation_data_number
@@ -101,8 +91,8 @@ const (
 	InsertTCBChangeAlert = `
 		INSERT INTO tcb_change_alerts
 		(fmspc, old_eval_number, new_eval_number, 
-		 change_type, affected_quotes_count, details, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, now64())
+		 affected_quotes_count, details, created_at)
+		VALUES (?, ?, ?, ?, ?, now64())
 	`
 
 	// Count registered quotes affected by FMSPC change
@@ -110,15 +100,6 @@ const (
 		SELECT COUNT(DISTINCT service_address)
 		FROM registry_quotes_raw
 		WHERE fmspc = ?
-	`
-
-	// Get recent TCB changes
-	GetRecentTCBChanges = `
-		SELECT fmspc, old_eval_number, new_eval_number, 
-		       change_type, affected_quotes_count, created_at
-		FROM tcb_change_alerts
-		WHERE created_at > now() - INTERVAL 24 HOUR
-		ORDER BY created_at DESC
 	`
 
 	// ===================
@@ -139,17 +120,5 @@ const (
 		INSERT INTO pipeline_offsets 
 		(service, last_block, last_log_index, updated_at)
 		VALUES (?, ?, ?, now64())
-	`
-
-	// ===================
-	// Monitoring Queries (for dashboards/alerts)
-	// ===================
-
-	// Get current invalid quotes count
-	GetInvalidQuotesCount = `
-		SELECT COUNT(DISTINCT service_address)
-		FROM tdx_quote_evaluations
-		WHERE status = 'Invalid'
-		  AND evaluated_at > now() - INTERVAL 2 HOUR
 	`
 )

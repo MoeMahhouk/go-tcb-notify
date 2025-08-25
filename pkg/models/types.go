@@ -165,7 +165,6 @@ type TCBChangeAlert struct {
 	FMSPC               string    `json:"fmspc" db:"fmspc"`
 	OldEvalNumber       uint32    `json:"old_eval_number" db:"old_eval_number"`
 	NewEvalNumber       uint32    `json:"new_eval_number" db:"new_eval_number"`
-	ChangeType          string    `json:"change_type" db:"change_type"` // Minor, Major, Critical
 	AffectedQuotesCount uint32    `json:"affected_quotes_count" db:"affected_quotes_count"`
 	Details             string    `json:"details" db:"details"`
 	CreatedAt           time.Time `json:"created_at" db:"created_at"`

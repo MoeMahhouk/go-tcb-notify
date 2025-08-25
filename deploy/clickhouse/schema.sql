@@ -95,7 +95,6 @@ CREATE TABLE IF NOT EXISTS tcb_change_alerts (
     fmspc String,
     old_eval_number UInt32,
     new_eval_number UInt32,
-    change_type Enum('Minor' = 1, 'Major' = 2, 'Critical' = 3),
     affected_quotes_count UInt32 DEFAULT 0,
     details String DEFAULT '',
     created_at DateTime64(3) DEFAULT now64(3),
@@ -197,7 +196,6 @@ SELECT
     a.latest_tcb_eval_number,
     c.old_eval_number as evaluated_with_tcb_version,
     c.new_eval_number as current_tcb_version,
-    c.change_type,
     c.created_at as tcb_updated_at
 FROM affected_quotes_by_tcb_update a
 JOIN tcb_change_alerts c ON a.fmspc = c.fmspc

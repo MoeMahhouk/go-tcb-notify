@@ -75,11 +75,6 @@ func (f *Fetcher) FetchAll(ctx context.Context) error {
 	// Step 2: Fetch TCB info for each FMSPC
 	stats := f.fetchTCBInfoForAll(ctx, fmspcs)
 
-	// Step 3: Create alerts for affected quotes
-	if stats.Updated > 0 {
-		f.createAlertsForAffectedQuotes(ctx)
-	}
-
 	f.logger.WithFields(logrus.Fields{
 		"duration": time.Since(start),
 		"total":    stats.Total,
@@ -187,6 +182,11 @@ func (f *Fetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) (bool,
 				"old_eval": currentEvalNum,
 				"new_eval": tcbInfo.TCBEvaluationDataNumber,
 			}).Info("TCB update detected")
+
+			// Create alert immediately when TCB update is detected
+			if err := f.createTCBUpdateAlert(ctx, fmspc, currentEvalNum, tcbInfo.TCBEvaluationDataNumber); err != nil {
+				f.logger.WithError(err).WithField("fmspc", fmspc).Error("Failed to create TCB update alert")
+			}
 		}
 
 		return true, nil
@@ -266,52 +266,23 @@ func (f *Fetcher) getCurrentEvalNumber(ctx context.Context, fmspc string) (uint3
 	return evalNum, nil
 }
 
-// createAlertsForAffectedQuotes creates alerts for quotes affected by TCB changes
-func (f *Fetcher) createAlertsForAffectedQuotes(ctx context.Context) {
-	rows, err := f.db.Query(ctx, clickdb.GetRecentTCBChanges)
-	if err != nil {
-		f.logger.WithError(err).Error("Failed to query recent TCB changes")
-		return
-	}
-	defer rows.Close()
+// createTCBUpdateAlert creates an alert when a TCB update is detected
+func (f *Fetcher) createTCBUpdateAlert(ctx context.Context, fmspc string, oldEval, newEval uint32) error {
+	// Count affected registered quotes
+	affectedCount := f.countAffectedQuotes(ctx, fmspc)
 
-	for rows.Next() {
-		var alert struct {
-			FMSPC          string
-			OldEval        uint32
-			NewEval        uint32
-			ChangeType     string
-			AffectedQuotes uint32
-			CreatedAt      time.Time
-		}
+	// Create alert with details
+	details := fmt.Sprintf("TCB evaluation updated from %d to %d for FMSPC %s, affecting %d registered quotes",
+		oldEval, newEval, fmspc, affectedCount)
 
-		if err := rows.Scan(&alert.FMSPC, &alert.OldEval, &alert.NewEval,
-			&alert.ChangeType, &alert.AffectedQuotes, &alert.CreatedAt); err != nil {
-			f.logger.WithError(err).Error("Failed to scan TCB change")
-			continue
-		}
+	f.logger.WithFields(logrus.Fields{
+		"fmspc":           fmspc,
+		"old_eval":        oldEval,
+		"new_eval":        newEval,
+		"affected_quotes": affectedCount,
+	}).Warn("TCB update detected, creating alert")
 
-		// Count affected registered quotes
-		affectedCount := f.countAffectedQuotes(ctx, alert.FMSPC)
-		if affectedCount == 0 {
-			continue
-		}
-
-		f.logger.WithFields(logrus.Fields{
-			"fmspc":           alert.FMSPC,
-			"old_eval":        alert.OldEval,
-			"new_eval":        alert.NewEval,
-			"affected_quotes": affectedCount,
-		}).Warn("TCB update affects registered quotes")
-
-		// Create alert with details
-		details := fmt.Sprintf("TCB evaluation updated from %d to %d for FMSPC %s",
-			alert.OldEval, alert.NewEval, alert.FMSPC)
-		if err := f.createAlert(ctx, alert.FMSPC, alert.OldEval, alert.NewEval,
-			alert.ChangeType, affectedCount, details); err != nil {
-			f.logger.WithError(err).Error("Failed to create alert")
-		}
-	}
+	return f.createAlert(ctx, fmspc, oldEval, newEval, affectedCount, details)
 }
 
 // countAffectedQuotes counts quotes affected by an FMSPC change
@@ -324,9 +295,9 @@ func (f *Fetcher) countAffectedQuotes(ctx context.Context, fmspc string) uint32 
 
 // createAlert creates a TCB change alert
 func (f *Fetcher) createAlert(ctx context.Context, fmspc string, oldEval, newEval uint32,
-	changeType string, affectedCount uint32, details string) error {
+	affectedCount uint32, details string) error {
 	return f.db.Exec(ctx, clickdb.InsertTCBChangeAlert,
-		fmspc, oldEval, newEval, changeType, affectedCount, details,
+		fmspc, oldEval, newEval, affectedCount, details,
 	)
 }
 

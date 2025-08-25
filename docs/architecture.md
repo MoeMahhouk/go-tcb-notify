@@ -156,7 +156,6 @@ tcb_change_alerts
 ├── fmspc (String)-- Affected platform
 ├── old_eval_number (UInt32)-- Previous version
 ├── new_eval_number (UInt32)-- New version
-├── change_type (Enum)-- Minor/Major/Critical
 ├── affected_quotes_count (UInt32)-- Impact count
 ├── details (String)-- Change details
 ├── created_at (DateTime64)-- Alert timestamp
@@ -378,10 +377,9 @@ SELECT
     service_address,
     current_tcb_status,
     tcb_updated_at,
-    change_type
 FROM quotes_needing_reevaluation_due_to_tcb
 WHERE tcb_updated_at > now() - INTERVAL 1 HOUR
-ORDER BY change_type DESC, tcb_updated_at DESC;
+ORDER BY tcb_updated_at DESC;
 
 ```
 
