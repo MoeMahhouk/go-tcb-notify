@@ -9,7 +9,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -17,38 +16,99 @@ import (
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
 	"github.com/MoeMahhouk/go-tcb-notify/internal/registry/bindings"
-	clickdb "github.com/MoeMahhouk/go-tcb-notify/internal/storage/clickhouse"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/storage"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdx"
 )
 
 const ServiceName = "ingest-registry"
 
-// Ingester handles registry event ingestion
+// Event represents a registry event
+type Event struct {
+	Type        string
+	TeeAddress  common.Address
+	RawQuote    []byte
+	BlockNumber uint64
+	LogIndex    uint
+	TxHash      common.Hash
+	BlockTime   time.Time
+}
+
+// QuoteProcessor handles the business logic of processing quotes
+type QuoteProcessor struct {
+	parser *tdx.QuoteParser
+}
+
+// NewQuoteProcessor creates a new quote processor
+func NewQuoteProcessor() *QuoteProcessor {
+	return &QuoteProcessor{
+		parser: tdx.NewQuoteParser(),
+	}
+}
+
+// ProcessQuote processes a raw quote and extracts relevant information
+func (p *QuoteProcessor) ProcessQuote(raw []byte) (*models.RegistryQuote, error) {
+	// Calculate quote hash
+	sum := sha256.Sum256(raw)
+	quoteHash := hex.EncodeToString(sum[:])
+
+	// Extract FMSPC from quote
+	fmspc := ""
+	if parsed, err := p.parser.ParseQuote(raw); err == nil {
+		fmspc = parsed.FMSPC
+	}
+
+	return &models.RegistryQuote{
+		QuoteBytes:  raw,
+		QuoteLength: uint32(len(raw)),
+		QuoteHash:   quoteHash,
+		FMSPC:       fmspc,
+	}, nil
+}
+
+// Ingester handles registry event ingestion with clean separation of concerns
 type Ingester struct {
-	db        clickhouse.Conn
+	// Storage interfaces
+	quoteStore  storage.QuoteStore
+	offsetStore storage.OffsetStore
+
+	// External dependencies
 	ethClient *ethclient.Client
 	registry  *bindings.FlashtestationRegistry
-	parser    *tdx.QuoteParser
-	config    *config.IngestRegistry
-	logger    *logrus.Entry
+
+	// Business logic
+	processor *QuoteProcessor
+
+	// Configuration and logging
+	config *config.IngestRegistry
+	logger *logrus.Entry
+
+	// State
 	lastBlock uint64
 	lastIdx   uint
 }
 
-// NewIngester creates a new registry ingester service
-func NewIngester(db clickhouse.Conn, ethClient *ethclient.Client, registryAddr common.Address, cfg *config.IngestRegistry) (*Ingester, error) {
+// NewIngester creates a new registry ingester service with dependency injection
+func NewIngester(
+	quoteStore storage.QuoteStore,
+	offsetStore storage.OffsetStore,
+	ethClient *ethclient.Client,
+	registryAddr common.Address,
+	cfg *config.IngestRegistry,
+) (*Ingester, error) {
 	registry, err := bindings.NewFlashtestationRegistry(registryAddr, ethClient)
 	if err != nil {
 		return nil, fmt.Errorf("create registry binding: %w", err)
 	}
 
 	return &Ingester{
-		db:        db,
-		ethClient: ethClient,
-		registry:  registry,
-		parser:    tdx.NewQuoteParser(),
-		config:    cfg,
-		logger:    logrus.WithField("service", ServiceName),
+		quoteStore:  quoteStore,
+		offsetStore: offsetStore,
+		ethClient:   ethClient,
+		registry:    registry,
+		processor:   NewQuoteProcessor(),
+		config:      cfg,
+		logger:      logrus.WithField("service", ServiceName),
 	}, nil
 }
 
@@ -142,17 +202,6 @@ func (i *Ingester) processBatch(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Event represents a registry event
-type Event struct {
-	Type        string
-	TeeAddress  common.Address
-	RawQuote    []byte
-	BlockNumber uint64
-	LogIndex    uint
-	TxHash      common.Hash
-	BlockTime   time.Time
 }
 
 // fetchEvents fetches events from the registry
@@ -287,35 +336,35 @@ func (i *Ingester) processEvent(ctx context.Context, event Event) error {
 
 // processRegistrationEvent processes a TEEServiceRegistered event
 func (i *Ingester) processRegistrationEvent(ctx context.Context, event Event) error {
-	// Calculate quote hash
-	sum := sha256.Sum256(event.RawQuote)
-	quoteHash := hex.EncodeToString(sum[:])
-
-	// Extract FMSPC from quote
-	fmspc := ""
-	if parsed, err := i.parser.ParseQuote(event.RawQuote); err == nil {
-		fmspc = parsed.FMSPC
+	// Process the quote (business logic)
+	processed, err := i.processor.ProcessQuote(event.RawQuote)
+	if err != nil {
+		return fmt.Errorf("process quote: %w", err)
 	}
 
-	// Store in database with event_type = 'Registered'
-	return i.db.Exec(ctx, clickdb.InsertQuoteRaw,
-		event.TeeAddress.Hex(),
-		event.BlockNumber,
-		event.BlockTime,
-		event.TxHash.Hex(),
-		uint32(event.LogIndex),
-		"Registered",                       // event_type
-		hex.EncodeToString(event.RawQuote), // Store as hex string
-		uint32(len(event.RawQuote)),
-		quoteHash,
-		fmspc,
-	)
+	// Prepare the quote for storage
+	quote := &models.RegistryQuote{
+		ServiceAddress: event.TeeAddress.Hex(),
+		BlockNumber:    event.BlockNumber,
+		BlockTime:      event.BlockTime,
+		TxHash:         event.TxHash.Hex(),
+		LogIndex:       uint32(event.LogIndex),
+		QuoteBytes:     processed.QuoteBytes,
+		QuoteLength:    processed.QuoteLength,
+		QuoteHash:      processed.QuoteHash,
+		FMSPC:          processed.FMSPC,
+		IngestedAt:     time.Now().UTC(),
+	}
+
+	// Store using the interface (no SQL here!)
+	return i.quoteStore.StoreRawQuote(ctx, quote)
 }
 
 // processInvalidationEvent processes a TEEServiceInvalidated event
 func (i *Ingester) processInvalidationEvent(ctx context.Context, event Event) error {
-	// Store invalidation event in database
-	return i.db.Exec(ctx, clickdb.InsertInvalidationEvent,
+	// Store invalidation using the interface
+	return i.quoteStore.StoreInvalidation(
+		ctx,
 		event.TeeAddress.Hex(),
 		event.BlockNumber,
 		event.BlockTime,
@@ -326,24 +375,21 @@ func (i *Ingester) processInvalidationEvent(ctx context.Context, event Event) er
 
 // loadCheckpoint loads the last processed position
 func (i *Ingester) loadCheckpoint(ctx context.Context) error {
-	var lastBlock uint64
-	var lastIdx uint32
-
-	row := i.db.QueryRow(ctx, clickdb.GetOffset, ServiceName)
-	if err := row.Scan(&lastBlock, &lastIdx); err != nil {
+	blockNumber, logIndex, err := i.offsetStore.LoadOffset(ctx, ServiceName)
+	if err != nil {
 		i.lastBlock = 0
 		i.lastIdx = 0
 		return err
 	}
 
-	i.lastBlock = lastBlock
-	i.lastIdx = uint(lastIdx)
+	i.lastBlock = blockNumber
+	i.lastIdx = uint(logIndex)
 	return nil
 }
 
 // saveCheckpoint saves the current position
 func (i *Ingester) saveCheckpoint(ctx context.Context) error {
-	return i.db.Exec(ctx, clickdb.UpsertOffset, ServiceName, i.lastBlock, uint32(i.lastIdx))
+	return i.offsetStore.SaveOffset(ctx, ServiceName, i.lastBlock, uint32(i.lastIdx))
 }
 
 func minU64(a, b uint64) uint64 {
