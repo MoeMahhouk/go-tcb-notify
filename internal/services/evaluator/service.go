@@ -2,15 +2,13 @@ package evaluator
 
 import (
 	"context"
-	"encoding/hex"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/sirupsen/logrus"
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
-	clickdb "github.com/MoeMahhouk/go-tcb-notify/internal/storage/clickhouse"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/storage"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/tdx"
 )
 
@@ -18,19 +16,30 @@ const ServiceName = "evaluate-quotes"
 
 // Evaluator handles TDX quote evaluation
 type Evaluator struct {
-	db       clickhouse.Conn
+	// Storage interfaces
+	quoteStore      storage.QuoteStore
+	evaluationStore storage.EvaluationStore
+
+	// Business logic
 	verifier *tdx.QuoteVerifier
-	config   *config.EvaluateQuotes
-	logger   *logrus.Entry
+
+	// Configuration and logging
+	config *config.EvaluateQuotes
+	logger *logrus.Entry
 }
 
-// NewEvaluator creates a new quote evaluator service
-func NewEvaluator(db clickhouse.Conn, cfg *config.EvaluateQuotes) *Evaluator {
+// NewEvaluator creates a new quote evaluator service with dependency injection
+func NewEvaluator(
+	quoteStore storage.QuoteStore,
+	evaluationStore storage.EvaluationStore,
+	cfg *config.EvaluateQuotes,
+) *Evaluator {
 	return &Evaluator{
-		db:       db,
-		verifier: tdx.NewQuoteVerifier(cfg.GetCollateral, cfg.CheckRevocations),
-		config:   cfg,
-		logger:   logrus.WithField("service", ServiceName),
+		quoteStore:      quoteStore,
+		evaluationStore: evaluationStore,
+		verifier:        tdx.NewQuoteVerifier(cfg.GetCollateral, cfg.CheckRevocations),
+		config:          cfg,
+		logger:          logrus.WithField("service", ServiceName),
 	}
 }
 
@@ -84,50 +93,25 @@ type EvaluationStats struct {
 	Changed int
 }
 
-// fetchAllQuotes fetches all registered quotes from the database
-func (e *Evaluator) fetchAllQuotes(ctx context.Context) ([]models.RegistryQuote, error) {
-	rows, err := e.db.Query(ctx, clickdb.GetAllRegisteredQuotes)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var quotes []models.RegistryQuote
-	for rows.Next() {
-		var quote models.RegistryQuote
-		if err := rows.Scan(
-			&quote.ServiceAddress,
-			&quote.BlockNumber,
-			&quote.BlockTime,
-			&quote.TxHash,
-			&quote.LogIndex,
-			&quote.QuoteBytes,
-			&quote.QuoteLength,
-			&quote.QuoteHash,
-		); err != nil {
-			e.logger.WithError(err).Error("Failed to scan quote")
-			continue
-		}
-		quotes = append(quotes, quote)
-	}
-
-	return quotes, rows.Err()
+// fetchAllQuotes fetches all registered quotes using the interface
+func (e *Evaluator) fetchAllQuotes(ctx context.Context) ([]*models.RegistryQuote, error) {
+	return e.quoteStore.GetActiveQuotes(ctx)
 }
 
 // evaluateQuotes evaluates a batch of quotes
-func (e *Evaluator) evaluateQuotes(ctx context.Context, quotes []models.RegistryQuote) EvaluationStats {
+func (e *Evaluator) evaluateQuotes(ctx context.Context, quotes []*models.RegistryQuote) EvaluationStats {
 	stats := EvaluationStats{Total: len(quotes)}
 
 	for _, quote := range quotes {
-		evaluation := e.evaluateQuote(quote)
+		evaluation := e.evaluateQuote(*quote)
 
 		// Check for status changes
 		if e.checkAndRecordStatusChange(ctx, evaluation) {
 			stats.Changed++
 		}
 
-		// Store evaluation result
-		if err := e.storeEvaluation(ctx, evaluation); err != nil {
+		// Store evaluation result using interface
+		if err := e.evaluationStore.StoreEvaluation(ctx, evaluation); err != nil {
 			e.logger.WithError(err).WithField("address", quote.ServiceAddress).Error("Failed to store evaluation")
 			continue
 		}
@@ -176,11 +160,8 @@ func (e *Evaluator) evaluateQuote(quote models.RegistryQuote) *models.QuoteEvalu
 // checkAndRecordStatusChange checks if a quote's status has changed
 func (e *Evaluator) checkAndRecordStatusChange(ctx context.Context, eval *models.QuoteEvaluation) bool {
 	// Get previous evaluation
-	row := e.db.QueryRow(ctx, clickdb.GetLastEvaluation, eval.ServiceAddress, eval.QuoteHash)
-
-	var prevStatus string
-	var prevTCBStatus string
-	if err := row.Scan(&prevStatus, &prevTCBStatus); err != nil {
+	prevStatus, prevTCBStatus, err := e.evaluationStore.GetLastEvaluation(ctx, eval.ServiceAddress, eval.QuoteHash)
+	if err != nil {
 		// No previous evaluation or error
 		return false
 	}
@@ -191,7 +172,7 @@ func (e *Evaluator) checkAndRecordStatusChange(ctx context.Context, eval *models
 	}
 
 	// Record status change
-	if err := e.db.Exec(ctx, clickdb.InsertQuoteEvaluationHistory,
+	if err := e.evaluationStore.StoreEvaluationHistory(ctx,
 		eval.ServiceAddress,
 		eval.QuoteHash,
 		prevStatus,
@@ -211,36 +192,4 @@ func (e *Evaluator) checkAndRecordStatusChange(ctx context.Context, eval *models
 	}
 
 	return true
-}
-
-// storeEvaluation stores an evaluation result
-func (e *Evaluator) storeEvaluation(ctx context.Context, eval *models.QuoteEvaluation) error {
-	// Convert components to storage format
-	sgxComponents := ""
-	tdxComponents := ""
-
-	if eval.TCBComponents != (models.TCBComponents{}) {
-		sgxComponents = hex.EncodeToString(eval.TCBComponents.SGXComponents[:])
-		tdxComponents = hex.EncodeToString(eval.TCBComponents.TDXComponents[:])
-	}
-
-	return e.db.Exec(ctx, clickdb.InsertQuoteEvaluation,
-		eval.ServiceAddress,
-		eval.QuoteHash,
-		eval.QuoteLength,
-		string(eval.Status),
-		string(eval.TCBStatus),
-		eval.ErrorMessage,
-		eval.FMSPC,
-		sgxComponents,
-		tdxComponents,
-		eval.TCBComponents.PCESVN,
-		eval.BlockNumber,
-		eval.LogIndex,
-		eval.BlockTime,
-		eval.MrTd,
-		eval.MrSeam,
-		eval.MrSignerSeam,
-		eval.ReportData,
-	)
 }

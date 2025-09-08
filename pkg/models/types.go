@@ -161,7 +161,6 @@ type ComponentSVN struct {
 // TCBChangeAlert represents an alert for TCB changes
 // Maps to: tcb_change_alerts table
 type TCBChangeAlert struct {
-	ID                  string    `json:"id" db:"id"`
 	FMSPC               string    `json:"fmspc" db:"fmspc"`
 	OldEvalNumber       uint32    `json:"old_eval_number" db:"old_eval_number"`
 	NewEvalNumber       uint32    `json:"new_eval_number" db:"new_eval_number"`
@@ -170,6 +169,9 @@ type TCBChangeAlert struct {
 	CreatedAt           time.Time `json:"created_at" db:"created_at"`
 	Acknowledged        bool      `json:"acknowledged" db:"acknowledged"`
 }
+
+// TCBAlert is an alias for TCBChangeAlert (for interface compatibility)
+type TCBAlert = TCBChangeAlert
 
 // ===================
 // Pipeline Management

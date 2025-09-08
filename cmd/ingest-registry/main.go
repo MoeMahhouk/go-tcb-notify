@@ -45,8 +45,18 @@ func main() {
 		log.Fatalf("Failed to connect to Ethereum: %v", err)
 	}
 
-	// Create and run the ingester service
-	ingester, err := ingest.NewIngester(db, ethClient, cfg.Ethereum.RegistryAddress, &cfg.IngestRegistry)
+	// Create storage implementations
+	quoteStore := clickhouse.NewQuoteStore(db)
+	offsetStore := clickhouse.NewOffsetStore(db)
+
+	// Create and run the ingester service with dependency injection
+	ingester, err := ingest.NewIngester(
+		quoteStore,
+		offsetStore,
+		ethClient,
+		cfg.Ethereum.RegistryAddress,
+		&cfg.IngestRegistry,
+	)
 	if err != nil {
 		log.Fatalf("Failed to create ingester: %v", err)
 	}

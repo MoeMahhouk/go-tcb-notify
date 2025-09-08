@@ -48,6 +48,10 @@ func main() {
 	}
 	defer ch.Close()
 
+	// Create storage implementations
+	quoteStore := clickdb.NewQuoteStore(ch)
+	evaluationStore := clickdb.NewEvaluationStore(ch)
+
 	logrus.WithFields(logrus.Fields{
 		"service":           serviceName,
 		"poll_interval":     cfg.EvaluateQuotes.PollInterval,
@@ -55,8 +59,12 @@ func main() {
 		"check_revocations": cfg.EvaluateQuotes.CheckRevocations,
 	}).Info("Starting quote evaluation service")
 
-	// Create and run the evaluator service
-	evaluatorService := evaluator.NewEvaluator(ch, &cfg.EvaluateQuotes)
+	// Create and run the evaluator service with dependency injection
+	evaluatorService := evaluator.NewEvaluator(
+		quoteStore,
+		evaluationStore,
+		&cfg.EvaluateQuotes,
+	)
 
 	if err := evaluatorService.Run(ctx); err != nil {
 		logrus.WithError(err).Error("Evaluator service failed")

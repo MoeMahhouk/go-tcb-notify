@@ -38,8 +38,18 @@ func main() {
 	}
 	defer db.Close()
 
-	// Create and run the PCS fetcher service
-	fetcher := pcs.NewFetcher(db, &cfg.PCS)
+	// Create storage implementations
+	tcbStore := clickhouse.NewTCBStore(db)
+	quoteStore := clickhouse.NewQuoteStore(db)
+	alertStore := clickhouse.NewAlertStore(db)
+
+	// Create and run the PCS fetcher service with dependency injection
+	fetcher := pcs.NewFetcher(
+		tcbStore,
+		quoteStore,
+		alertStore,
+		&cfg.PCS,
+	)
 	if err := fetcher.Run(ctx); err != nil && err != context.Canceled {
 		log.Fatalf("PCS fetcher failed: %v", err)
 	}
