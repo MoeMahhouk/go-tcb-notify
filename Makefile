@@ -59,7 +59,7 @@ schema:
 up:
 	docker compose up --build -d
 
-down:
+down: bindings
 	docker compose down -v
 
 clean:
