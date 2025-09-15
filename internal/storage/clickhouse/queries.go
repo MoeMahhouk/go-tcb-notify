@@ -25,28 +25,28 @@ const (
 	// Get ALL currently active (non-invalidated) quotes for evaluation
 	GetAllRegisteredQuotes = `
 		WITH latest_events AS (
-			SELECT 
+			SELECT
 				service_address,
-				argMax(event_type, block_number) as latest_event_type,
-				argMax(block_number, block_number) as block_number,
-				argMax(block_time, block_number) as block_time,
-				argMax(tx_hash, block_number) as tx_hash,
-				argMax(log_index, block_number) as log_index,
-				argMax(quote_bytes, block_number) as quote_bytes,
-				argMax(quote_len, block_number) as quote_len,
-				argMax(quote_sha256, block_number) as quote_sha256
+				argMax(event_type,      block_number) AS latest_event_type,
+				argMax(block_number,    block_number) AS latest_block_number,
+				argMax(block_time,      block_number) AS latest_block_time,
+				argMax(tx_hash,         block_number) AS latest_tx_hash,
+				argMax(log_index,       block_number) AS latest_log_index,
+				argMax(quote_bytes,     block_number) AS latest_quote_bytes,
+				argMax(quote_len,       block_number) AS latest_quote_len,
+				argMax(quote_sha256,    block_number) AS latest_quote_sha256
 			FROM registry_quotes_raw
 			GROUP BY service_address
 		)
-		SELECT 
-			service_address, 
-			block_number, 
-			block_time, 
-			tx_hash, 
-			log_index, 
-			quote_bytes, 
-			quote_len, 
-			quote_sha256
+		SELECT
+			service_address,
+			latest_block_number AS block_number,
+			latest_block_time   AS block_time,
+			latest_tx_hash      AS tx_hash,
+			latest_log_index    AS log_index,
+			latest_quote_bytes  AS quote_bytes,
+			latest_quote_len    AS quote_len,
+			latest_quote_sha256 AS quote_sha256
 		FROM latest_events
 		WHERE latest_event_type = 'Registered'
 		ORDER BY service_address, block_number DESC
