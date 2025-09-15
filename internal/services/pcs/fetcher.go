@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/sirupsen/logrus"
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
@@ -30,9 +29,6 @@ type Fetcher struct {
 	// Configuration and logging
 	config *config.PCS
 	logger *logrus.Entry
-
-	// Legacy database connection (for queries not yet refactored)
-	db clickhouse.Conn
 }
 
 // NewFetcher creates a new PCS fetcher service with dependency injection
