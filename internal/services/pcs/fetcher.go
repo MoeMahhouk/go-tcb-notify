@@ -7,31 +7,44 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/sirupsen/logrus"
 
 	"github.com/MoeMahhouk/go-tcb-notify/internal/config"
-	clickdb "github.com/MoeMahhouk/go-tcb-notify/internal/storage/clickhouse"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
+	"github.com/MoeMahhouk/go-tcb-notify/pkg/storage"
 )
 
 const ServiceName = "fetch-pcs"
 
 // Fetcher handles fetching TCB information from Intel PCS
 type Fetcher struct {
-	db     clickhouse.Conn
+	// Storage interfaces
+	tcbStore   storage.TCBStore
+	quoteStore storage.QuoteStore
+	alertStore storage.AlertStore
+
+	// External dependencies
 	client *Client
+
+	// Configuration and logging
 	config *config.PCS
 	logger *logrus.Entry
 }
 
-// NewFetcher creates a new PCS fetcher service
-func NewFetcher(db clickhouse.Conn, cfg *config.PCS) *Fetcher {
+// NewFetcher creates a new PCS fetcher service with dependency injection
+func NewFetcher(
+	tcbStore storage.TCBStore,
+	quoteStore storage.QuoteStore,
+	alertStore storage.AlertStore,
+	cfg *config.PCS,
+) *Fetcher {
 	return &Fetcher{
-		db:     db,
-		client: NewClient(cfg.BaseURL, cfg.APIKey),
-		config: cfg,
-		logger: logrus.WithField("service", ServiceName),
+		tcbStore:   tcbStore,
+		quoteStore: quoteStore,
+		alertStore: alertStore,
+		client:     NewClient(cfg.BaseURL, cfg.APIKey),
+		config:     cfg,
+		logger:     logrus.WithField("service", ServiceName),
 	}
 }
 
@@ -201,20 +214,17 @@ func (f *Fetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) (bool,
 	return false, nil
 }
 
-// storeFMSPC stores an FMSPC in the database
+// storeFMSPC stores an FMSPC using the interface
 func (f *Fetcher) storeFMSPC(ctx context.Context, fmspc models.FMSPCResponse) error {
 	platform := fmspc.Platform
 	if platform == "" {
 		platform = "ALL"
 	}
 
-	return f.db.Exec(ctx, clickdb.UpsertPCSFMSPC,
-		strings.ToUpper(fmspc.FMSPC),
-		platform,
-	)
+	return f.tcbStore.StoreFMSPC(ctx, strings.ToUpper(fmspc.FMSPC), platform)
 }
 
-// storeTCBInfo stores TCB info in the database
+// storeTCBInfo stores TCB info using the interface
 func (f *Fetcher) storeTCBInfo(ctx context.Context, fmspc string, tcbResp *models.TCBInfoResponse) error {
 	// Parse the TCB info from the raw JSON
 	var tcbInfo models.TCBInfo
@@ -227,12 +237,6 @@ func (f *Fetcher) storeTCBInfo(ctx context.Context, fmspc string, tcbResp *model
 		return fmt.Errorf("marshal raw response: %w", err)
 	}
 
-	// Convert TCB levels to JSON string for storage
-	tcbLevelsJSON, err := json.Marshal(tcbInfo.TCBLevels)
-	if err != nil {
-		return fmt.Errorf("marshal TCB levels: %w", err)
-	}
-
 	f.logger.WithFields(logrus.Fields{
 		"fmspc":       strings.ToUpper(fmspc),
 		"eval_num":    tcbInfo.TCBEvaluationDataNumber,
@@ -241,24 +245,18 @@ func (f *Fetcher) storeTCBInfo(ctx context.Context, fmspc string, tcbResp *model
 		"next_update": tcbInfo.NextUpdate,
 	}).Debug("Storing TCB info")
 
-	return f.db.Exec(ctx, clickdb.InsertPCSTCBInfo,
-		strings.ToUpper(fmspc),
-		tcbInfo.TCBEvaluationDataNumber,
-		tcbInfo.IssueDate,
-		tcbInfo.NextUpdate,
-		tcbInfo.TCBType,
-		string(tcbLevelsJSON),
-		string(rawJSON),
-	)
+	// Prepare TCB info for storage
+	tcbInfo.FMSPC = strings.ToUpper(fmspc)
+	tcbInfo.RawJSON = string(rawJSON)
+
+	return f.tcbStore.StoreTCBInfo(ctx, &tcbInfo)
 }
 
 // getCurrentEvalNumber gets the current TCB evaluation number for an FMSPC
 func (f *Fetcher) getCurrentEvalNumber(ctx context.Context, fmspc string) (uint32, error) {
-	var evalNum uint32
-	row := f.db.QueryRow(ctx, clickdb.CheckTCBUpdate, fmspc)
-	if err := row.Scan(&evalNum); err != nil {
-		// Check if it's a "no rows" error, which means this FMSPC doesn't exist yet
-		if strings.Contains(err.Error(), "no rows") || strings.Contains(err.Error(), "EOF") {
+	evalNum, err := f.tcbStore.GetCurrentEvalNumber(ctx, fmspc)
+	if err != nil {
+		if strings.Contains(err.Error(), "no TCB info found") {
 			return 0, ErrNotFound
 		}
 		return 0, err
@@ -268,8 +266,12 @@ func (f *Fetcher) getCurrentEvalNumber(ctx context.Context, fmspc string) (uint3
 
 // createTCBUpdateAlert creates an alert when a TCB update is detected
 func (f *Fetcher) createTCBUpdateAlert(ctx context.Context, fmspc string, oldEval, newEval uint32) error {
-	// Count affected registered quotes
-	affectedCount := f.countAffectedQuotes(ctx, fmspc)
+	// Count affected registered quotes using interface
+	affectedCount, err := f.quoteStore.CountAffectedQuotes(ctx, fmspc)
+	if err != nil {
+		f.logger.WithError(err).Warn("Failed to count affected quotes, using 0")
+		affectedCount = 0
+	}
 
 	// Create alert with details
 	details := fmt.Sprintf("TCB evaluation updated from %d to %d for FMSPC %s, affecting %d registered quotes",
@@ -282,23 +284,18 @@ func (f *Fetcher) createTCBUpdateAlert(ctx context.Context, fmspc string, oldEva
 		"affected_quotes": affectedCount,
 	}).Warn("TCB update detected, creating alert")
 
-	return f.createAlert(ctx, fmspc, oldEval, newEval, affectedCount, details)
-}
+	// Create alert using interface
+	alert := &models.TCBAlert{
+		FMSPC:               fmspc,
+		OldEvalNumber:       oldEval,
+		NewEvalNumber:       newEval,
+		AffectedQuotesCount: uint32(affectedCount),
+		Details:             details,
+		CreatedAt:           time.Now(),
+		Acknowledged:        false,
+	}
 
-// countAffectedQuotes counts quotes affected by an FMSPC change
-func (f *Fetcher) countAffectedQuotes(ctx context.Context, fmspc string) uint32 {
-	var count uint32
-	row := f.db.QueryRow(ctx, clickdb.CountAffectedRegisteredQuotes, fmspc)
-	_ = row.Scan(&count) // Ignore error
-	return count
-}
-
-// createAlert creates a TCB change alert
-func (f *Fetcher) createAlert(ctx context.Context, fmspc string, oldEval, newEval uint32,
-	affectedCount uint32, details string) error {
-	return f.db.Exec(ctx, clickdb.InsertTCBChangeAlert,
-		fmspc, oldEval, newEval, affectedCount, details,
-	)
+	return f.alertStore.CreateAlert(ctx, alert)
 }
 
 var ErrNotFound = fmt.Errorf("not found")

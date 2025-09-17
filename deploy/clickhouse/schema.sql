@@ -92,7 +92,6 @@ COMMENT 'Historical TCB info from Intel PCS';
 
 -- TCB change alerts (when Intel updates TCB)
 CREATE TABLE IF NOT EXISTS tcb_change_alerts (
-    id UUID DEFAULT generateUUIDv4(),
     fmspc String,
     old_eval_number UInt32,
     new_eval_number UInt32,
@@ -101,7 +100,7 @@ CREATE TABLE IF NOT EXISTS tcb_change_alerts (
     created_at DateTime64(3) DEFAULT now64(3),
     acknowledged Boolean DEFAULT false
 ) ENGINE = MergeTree()
-ORDER BY (created_at, fmspc)
+ORDER BY (fmspc, created_at)
 PARTITION BY toYYYYMM(created_at)
 TTL created_at + INTERVAL 30 DAY
 COMMENT 'Alerts when Intel PCS TCB info changes';

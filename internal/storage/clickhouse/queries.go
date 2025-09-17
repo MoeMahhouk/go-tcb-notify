@@ -23,7 +23,7 @@ const (
 	// ===================
 
 	// Get ALL currently active (non-invalidated) quotes for evaluation
-	GetAllRegisteredQuotes = `
+	GetActiveQuotes = `
 		WITH latest_events AS (
 			SELECT
 				service_address,
@@ -129,6 +129,49 @@ const (
 		(fmspc, old_eval_number, new_eval_number, 
 		 affected_quotes_count, details, created_at)
 		VALUES (?, ?, ?, ?, ?, now64())
+	`
+
+	// Get all active FMSPCs
+	GetAllFMSPCs = `
+		SELECT DISTINCT fmspc 
+		FROM pcs_fmspcs 
+		WHERE is_active = 1
+	`
+
+	// Update FMSPC last seen time
+	UpdateFMSPCSeen = `
+		INSERT INTO pcs_fmspcs (fmspc, last_seen)
+		VALUES (?, ?)
+	`
+
+	// ===================
+	// Alert Management Queries
+	// ===================
+
+	// Get pending alerts (recent alerts that need attention)
+	GetPendingAlerts = `
+		SELECT fmspc, old_eval_number, new_eval_number, 
+			   affected_quotes_count, details, created_at, acknowledged
+		FROM tcb_change_alerts
+		WHERE acknowledged = false
+		ORDER BY created_at DESC
+	`
+
+	// Get recent alerts (last 24 hours)
+	GetRecentAlerts = `
+		SELECT fmspc, old_eval_number, new_eval_number, 
+			   affected_quotes_count, details, created_at, acknowledged
+		FROM tcb_change_alerts
+		WHERE created_at > now() - INTERVAL 24 HOUR
+		ORDER BY created_at DESC
+		LIMIT ?
+	`
+
+	// Acknowledge an alert by FMSPC and timestamp
+	AcknowledgeAlert = `
+		ALTER TABLE tcb_change_alerts 
+		UPDATE acknowledged = true 
+		WHERE fmspc = ? AND created_at = ?
 	`
 
 	// ===================

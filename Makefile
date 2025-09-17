@@ -65,3 +65,26 @@ down: bindings
 clean:
 	rm -rf bin
 	rm -rf $(BINDINGS_DIR)
+	rm -rf internal/mocks
+
+## Generate mocks for testing
+mocks:
+	@echo "==> Installing mockery if not present..."
+	@go install github.com/vektra/mockery/v2@latest
+	@echo "==> Generating mocks..."
+	@mockery --dir=pkg/storage --name=QuoteStore --output=internal/mocks --outpkg=mocks --with-expecter
+	@mockery --dir=pkg/storage --name=TCBStore --output=internal/mocks --outpkg=mocks --with-expecter
+	@mockery --dir=pkg/storage --name=EvaluationStore --output=internal/mocks --outpkg=mocks --with-expecter
+	@mockery --dir=pkg/storage --name=OffsetStore --output=internal/mocks --outpkg=mocks --with-expecter
+	@mockery --dir=pkg/storage --name=AlertStore --output=internal/mocks --outpkg=mocks --with-expecter
+	@echo "==> Mocks generated in internal/mocks/"
+
+## Run tests
+test: mocks
+	go test -v ./...
+
+## Run tests with coverage
+test-coverage: mocks
+	go test -v -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "==> Coverage report generated: coverage.html"
