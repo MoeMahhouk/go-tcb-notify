@@ -2,25 +2,14 @@ package tdx
 
 import (
 	"crypto/x509"
-	"encoding/asn1"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 
+	"github.com/google/go-tdx-guest/pcs"
 	pb "github.com/google/go-tdx-guest/proto/tdx"
 )
-
-// OIDs per Intel SGX PCK Certificate & CRL Profile.
-var (
-	oidSGXExtensions = asn1.ObjectIdentifier{1, 2, 840, 113741, 1, 13, 1}
-	oidFMSPC         = asn1.ObjectIdentifier{1, 2, 840, 113741, 1, 13, 1, 4}
-	oidTCBBase       = asn1.ObjectIdentifier{1, 2, 840, 113741, 1, 13, 1, 2}
-)
-
-type sgxExtensions []struct {
-	ID    asn1.ObjectIdentifier
-	Value asn1.RawValue
-}
 
 type SGXFromPCK struct {
 	FMSPC  [6]byte
@@ -66,68 +55,45 @@ func extractSGXFromPCK(q *pb.QuoteV4) (*SGXFromPCK, error) {
 	if err != nil {
 		return nil, err
 	}
-	certs, err := x509.ParseCertificates(raw)
-	if err != nil || len(certs) == 0 {
+
+	// The PCK certificate chain is PEM-encoded, so we need to decode it first
+	// Following the same approach as go-tdx-guest's extractChainFromQuoteV4
+	block, _ := pem.Decode(raw)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("parse PCK chain: failed to decode PEM certificate")
+	}
+
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
 		return nil, fmt.Errorf("parse PCK chain: %w", err)
 	}
-	leaf := certs[0]
 
-	var extRaw []byte
-	for _, e := range leaf.Extensions {
-		if e.Id.Equal(oidSGXExtensions) {
-			extRaw = e.Value
-			break
-		}
-	}
-	if len(extRaw) == 0 {
-		return nil, errors.New("SGXExtensions OID not found in PCK leaf")
+	// Use go-tdx-guest's PckCertificateExtensions to properly extract SGX extensions
+	exts, err := pcs.PckCertificateExtensions(leaf)
+	if err != nil {
+		return nil, fmt.Errorf("extract PCK extensions: %w", err)
 	}
 
-	var seq sgxExtensions
-	if _, err := asn1.Unmarshal(extRaw, &seq); err != nil {
-		return nil, fmt.Errorf("unmarshal SGXExtensions: %w", err)
+	// Parse FMSPC from hex string
+	fmspcBytes, err := hex.DecodeString(exts.FMSPC)
+	if err != nil || len(fmspcBytes) != 6 {
+		return nil, fmt.Errorf("invalid FMSPC: %s", exts.FMSPC)
 	}
 
 	var out SGXFromPCK
-	for _, kv := range seq {
-		switch {
-		case kv.ID.Equal(oidFMSPC):
-			var oct asn1.RawValue
-			if _, err := asn1.Unmarshal(kv.Value.Bytes, &oct); err == nil && oct.Tag == asn1.TagOctetString {
-				if len(oct.Bytes) == 6 {
-					copy(out.FMSPC[:], oct.Bytes[:6])
-				}
-			}
-		case hasPrefix(kv.ID, oidTCBBase) && len(kv.ID) == len(oidTCBBase)+1:
-			last := int(kv.ID[len(kv.ID)-1]) // 1..18
-			switch {
-			case 1 <= last && last <= 16:
-				var v int
-				if _, err := asn1.Unmarshal(kv.Value.Bytes, &v); err == nil && v >= 0 && v <= 0xFF {
-					out.SGXSVN[last-1] = uint8(v)
-				}
-			case last == 17:
-				var v int
-				if _, err := asn1.Unmarshal(kv.Value.Bytes, &v); err == nil && v >= 0 && v <= 0xFFFF {
-					out.PCESVN = uint16(v)
-				}
-			}
+	copy(out.FMSPC[:], fmspcBytes)
+
+	// Extract TCB components from the TCB structure
+	// CPUSvnComponents contains the 16 SGX TCB component SVNs
+	if len(exts.TCB.CPUSvnComponents) >= 16 {
+		for i := 0; i < 16; i++ {
+			out.SGXSVN[i] = exts.TCB.CPUSvnComponents[i]
 		}
 	}
+	out.PCESVN = exts.TCB.PCESvn
+
 	if out.FMSPC == ([6]byte{}) {
 		return nil, errors.New("FMSPC not present in PCK leaf")
 	}
 	return &out, nil
-}
-
-func hasPrefix(a, b asn1.ObjectIdentifier) bool {
-	if len(a) < len(b) {
-		return false
-	}
-	for i := range b {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

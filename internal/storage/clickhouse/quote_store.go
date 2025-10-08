@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -21,6 +22,8 @@ func NewQuoteStore(conn clickhouse.Conn) *QuoteStore {
 
 // StoreRawQuote stores a raw quote from the registry
 func (s *QuoteStore) StoreRawQuote(ctx context.Context, quote *models.RegistryQuote) error {
+	quoteHex := hex.EncodeToString(quote.QuoteBytes)
+
 	return s.conn.Exec(ctx, InsertQuoteRaw,
 		quote.ServiceAddress,
 		quote.BlockNumber,
@@ -28,7 +31,7 @@ func (s *QuoteStore) StoreRawQuote(ctx context.Context, quote *models.RegistryQu
 		quote.TxHash,
 		quote.LogIndex,
 		"Registered", // EventType is always "Registered" for new quotes
-		quote.QuoteBytes,
+		quoteHex,
 		quote.QuoteLength,
 		quote.QuoteHash,
 		quote.FMSPC,
