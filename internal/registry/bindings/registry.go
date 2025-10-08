@@ -35,6 +35,7 @@ type IFlashtestationRegistryRegisteredTEE struct {
 	RawQuote                 []byte
 	ParsedReportBody         TD10ReportBody
 	ExtendedRegistrationData []byte
+	QuoteHash                [32]byte
 }
 
 // TD10ReportBody is an auto generated low-level Go binding around an user-defined struct.
@@ -58,7 +59,7 @@ type TD10ReportBody struct {
 
 // FlashtestationRegistryMetaData contains all meta data concerning the FlashtestationRegistry contract.
 var FlashtestationRegistryMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"MAX_BYTES_SIZE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"REGISTER_TYPEHASH\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"TD_REPORTDATA_LENGTH\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"UPGRADE_INTERFACE_VERSION\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"attestationContract\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIAttestation\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"computeStructHash\",\"inputs\":[{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"nonce\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"pure\"},{\"type\":\"function\",\"name\":\"eip712Domain\",\"inputs\":[],\"outputs\":[{\"name\":\"fields\",\"type\":\"bytes1\",\"internalType\":\"bytes1\"},{\"name\":\"name\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"version\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"extensions\",\"type\":\"uint256[]\",\"internalType\":\"uint256[]\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getRegistration\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structIFlashtestationRegistry.RegisteredTEE\",\"components\":[{\"name\":\"isValid\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"parsedReportBody\",\"type\":\"tuple\",\"internalType\":\"structTD10ReportBody\",\"components\":[{\"name\":\"teeTcbSvn\",\"type\":\"bytes16\",\"internalType\":\"bytes16\"},{\"name\":\"mrSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrsignerSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"seamAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"tdAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"xFAM\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"mrTd\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrConfigId\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwner\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwnerConfig\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr0\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr1\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr2\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr3\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"reportData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"hashTypedDataV4\",\"inputs\":[{\"name\":\"structHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"initialize\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_attestationContract\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"invalidateAttestation\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"nonces\",\"inputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"owner\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"permitRegisterTEEService\",\"inputs\":[{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"nonce\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"proxiableUUID\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"registerTEEService\",\"inputs\":[{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"registeredTEEs\",\"inputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"isValid\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"parsedReportBody\",\"type\":\"tuple\",\"internalType\":\"structTD10ReportBody\",\"components\":[{\"name\":\"teeTcbSvn\",\"type\":\"bytes16\",\"internalType\":\"bytes16\"},{\"name\":\"mrSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrsignerSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"seamAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"tdAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"xFAM\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"mrTd\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrConfigId\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwner\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwnerConfig\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr0\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr1\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr2\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr3\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"reportData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"renounceOwnership\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"transferOwnership\",\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"upgradeToAndCall\",\"inputs\":[{\"name\":\"newImplementation\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"data\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"event\",\"name\":\"EIP712DomainChanged\",\"inputs\":[],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Initialized\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"OwnershipTransferred\",\"inputs\":[{\"name\":\"previousOwner\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"newOwner\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TEEServiceInvalidated\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TEEServiceRegistered\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"address\"},{\"name\":\"rawQuote\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"},{\"name\":\"alreadyExists\",\"type\":\"bool\",\"indexed\":false,\"internalType\":\"bool\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Upgraded\",\"inputs\":[{\"name\":\"implementation\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AddressEmptyCode\",\"inputs\":[{\"name\":\"target\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ByteSizeExceeded\",\"inputs\":[{\"name\":\"size\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"ECDSAInvalidSignature\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ECDSAInvalidSignatureLength\",\"inputs\":[{\"name\":\"length\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"ECDSAInvalidSignatureS\",\"inputs\":[{\"name\":\"s\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"ERC1967InvalidImplementation\",\"inputs\":[{\"name\":\"implementation\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ERC1967NonPayable\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"FailedCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidInitialization\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidNonce\",\"inputs\":[{\"name\":\"expected\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"provided\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidQuote\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"InvalidQuoteLength\",\"inputs\":[{\"name\":\"length\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidRegistrationDataHash\",\"inputs\":[{\"name\":\"expected\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"received\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidReportDataLength\",\"inputs\":[{\"name\":\"length\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidTEEType\",\"inputs\":[{\"name\":\"teeType\",\"type\":\"bytes4\",\"internalType\":\"bytes4\"}]},{\"type\":\"error\",\"name\":\"InvalidTEEVersion\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint16\",\"internalType\":\"uint16\"}]},{\"type\":\"error\",\"name\":\"NotInitializing\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"OwnableInvalidOwner\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"OwnableUnauthorizedAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ReentrancyGuardReentrantCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"SenderMustMatchTEEAddress\",\"inputs\":[{\"name\":\"sender\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEIsStillValid\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEServiceAlreadyInvalid\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEServiceAlreadyRegistered\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEServiceNotRegistered\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"UUPSUnauthorizedCallContext\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"UUPSUnsupportedProxiableUUID\",\"inputs\":[{\"name\":\"slot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"MAX_BYTES_SIZE\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"REGISTER_TYPEHASH\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"TD_REPORTDATA_LENGTH\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"UPGRADE_INTERFACE_VERSION\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"attestationContract\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIAttestation\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"computeStructHash\",\"inputs\":[{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"nonce\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"pure\"},{\"type\":\"function\",\"name\":\"domainSeparator\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"eip712Domain\",\"inputs\":[],\"outputs\":[{\"name\":\"fields\",\"type\":\"bytes1\",\"internalType\":\"bytes1\"},{\"name\":\"name\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"version\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"extensions\",\"type\":\"uint256[]\",\"internalType\":\"uint256[]\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getRegistration\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structIFlashtestationRegistry.RegisteredTEE\",\"components\":[{\"name\":\"isValid\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"parsedReportBody\",\"type\":\"tuple\",\"internalType\":\"structTD10ReportBody\",\"components\":[{\"name\":\"teeTcbSvn\",\"type\":\"bytes16\",\"internalType\":\"bytes16\"},{\"name\":\"mrSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrsignerSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"seamAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"tdAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"xFAM\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"mrTd\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrConfigId\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwner\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwnerConfig\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr0\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr1\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr2\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr3\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"reportData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"quoteHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getRegistrationStatus\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"isValid\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"quoteHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"hashTypedDataV4\",\"inputs\":[{\"name\":\"structHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"initialize\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"_attestationContract\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"invalidateAttestation\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"invalidatePreviousSignature\",\"inputs\":[{\"name\":\"_nonce\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"nonces\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"permitNonce\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"owner\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"permitRegisterTEEService\",\"inputs\":[{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"nonce\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"proxiableUUID\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"registerTEEService\",\"inputs\":[{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"registeredTEEs\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"isValid\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"rawQuote\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"parsedReportBody\",\"type\":\"tuple\",\"internalType\":\"structTD10ReportBody\",\"components\":[{\"name\":\"teeTcbSvn\",\"type\":\"bytes16\",\"internalType\":\"bytes16\"},{\"name\":\"mrSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrsignerSeam\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"seamAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"tdAttributes\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"xFAM\",\"type\":\"bytes8\",\"internalType\":\"bytes8\"},{\"name\":\"mrTd\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrConfigId\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwner\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"mrOwnerConfig\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr0\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr1\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr2\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"rtMr3\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"reportData\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"name\":\"extendedRegistrationData\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"quoteHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"renounceOwnership\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"transferOwnership\",\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"upgradeToAndCall\",\"inputs\":[{\"name\":\"newImplementation\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"data\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"event\",\"name\":\"EIP712DomainChanged\",\"inputs\":[],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Initialized\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"OwnershipTransferred\",\"inputs\":[{\"name\":\"previousOwner\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"newOwner\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"PreviousSignatureInvalidated\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"invalidatedNonce\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TEEServiceInvalidated\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"TEEServiceRegistered\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"rawQuote\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"},{\"name\":\"alreadyExists\",\"type\":\"bool\",\"indexed\":false,\"internalType\":\"bool\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Upgraded\",\"inputs\":[{\"name\":\"implementation\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AddressEmptyCode\",\"inputs\":[{\"name\":\"target\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ByteSizeExceeded\",\"inputs\":[{\"name\":\"size\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"ECDSAInvalidSignature\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ECDSAInvalidSignatureLength\",\"inputs\":[{\"name\":\"length\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"ECDSAInvalidSignatureS\",\"inputs\":[{\"name\":\"s\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"ERC1967InvalidImplementation\",\"inputs\":[{\"name\":\"implementation\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ERC1967NonPayable\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ExpiredSignature\",\"inputs\":[{\"name\":\"deadline\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"FailedCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidAttestationContract\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidInitialization\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidNonce\",\"inputs\":[{\"name\":\"expected\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"provided\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidQuote\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"InvalidQuoteLength\",\"inputs\":[{\"name\":\"length\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidRegistrationDataHash\",\"inputs\":[{\"name\":\"expected\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"received\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidReportDataLength\",\"inputs\":[{\"name\":\"length\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidTEEType\",\"inputs\":[{\"name\":\"teeType\",\"type\":\"bytes4\",\"internalType\":\"bytes4\"}]},{\"type\":\"error\",\"name\":\"InvalidTEEVersion\",\"inputs\":[{\"name\":\"version\",\"type\":\"uint16\",\"internalType\":\"uint16\"}]},{\"type\":\"error\",\"name\":\"NotInitializing\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"OwnableInvalidOwner\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"OwnableUnauthorizedAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ReentrancyGuardReentrantCall\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"SignerMustMatchTEEAddress\",\"inputs\":[{\"name\":\"signer\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEIsStillValid\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEServiceAlreadyInvalid\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEServiceAlreadyRegistered\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"TEEServiceNotRegistered\",\"inputs\":[{\"name\":\"teeAddress\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"UUPSUnauthorizedCallContext\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"UUPSUnsupportedProxiableUUID\",\"inputs\":[{\"name\":\"slot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]}]",
 }
 
 // FlashtestationRegistryABI is the input ABI used to generate the binding from.
@@ -362,12 +363,12 @@ func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) AttestationC
 	return _FlashtestationRegistry.Contract.AttestationContract(&_FlashtestationRegistry.CallOpts)
 }
 
-// ComputeStructHash is a free data retrieval call binding the contract method 0x22a43e25.
+// ComputeStructHash is a free data retrieval call binding the contract method 0x0634434a.
 //
-// Solidity: function computeStructHash(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce) pure returns(bytes32)
-func (_FlashtestationRegistry *FlashtestationRegistryCaller) ComputeStructHash(opts *bind.CallOpts, rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int) ([32]byte, error) {
+// Solidity: function computeStructHash(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, uint256 deadline) pure returns(bytes32)
+func (_FlashtestationRegistry *FlashtestationRegistryCaller) ComputeStructHash(opts *bind.CallOpts, rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, deadline *big.Int) ([32]byte, error) {
 	var out []interface{}
-	err := _FlashtestationRegistry.contract.Call(opts, &out, "computeStructHash", rawQuote, extendedRegistrationData, nonce)
+	err := _FlashtestationRegistry.contract.Call(opts, &out, "computeStructHash", rawQuote, extendedRegistrationData, nonce, deadline)
 
 	if err != nil {
 		return *new([32]byte), err
@@ -379,18 +380,49 @@ func (_FlashtestationRegistry *FlashtestationRegistryCaller) ComputeStructHash(o
 
 }
 
-// ComputeStructHash is a free data retrieval call binding the contract method 0x22a43e25.
+// ComputeStructHash is a free data retrieval call binding the contract method 0x0634434a.
 //
-// Solidity: function computeStructHash(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce) pure returns(bytes32)
-func (_FlashtestationRegistry *FlashtestationRegistrySession) ComputeStructHash(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int) ([32]byte, error) {
-	return _FlashtestationRegistry.Contract.ComputeStructHash(&_FlashtestationRegistry.CallOpts, rawQuote, extendedRegistrationData, nonce)
+// Solidity: function computeStructHash(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, uint256 deadline) pure returns(bytes32)
+func (_FlashtestationRegistry *FlashtestationRegistrySession) ComputeStructHash(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, deadline *big.Int) ([32]byte, error) {
+	return _FlashtestationRegistry.Contract.ComputeStructHash(&_FlashtestationRegistry.CallOpts, rawQuote, extendedRegistrationData, nonce, deadline)
 }
 
-// ComputeStructHash is a free data retrieval call binding the contract method 0x22a43e25.
+// ComputeStructHash is a free data retrieval call binding the contract method 0x0634434a.
 //
-// Solidity: function computeStructHash(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce) pure returns(bytes32)
-func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) ComputeStructHash(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int) ([32]byte, error) {
-	return _FlashtestationRegistry.Contract.ComputeStructHash(&_FlashtestationRegistry.CallOpts, rawQuote, extendedRegistrationData, nonce)
+// Solidity: function computeStructHash(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, uint256 deadline) pure returns(bytes32)
+func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) ComputeStructHash(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, deadline *big.Int) ([32]byte, error) {
+	return _FlashtestationRegistry.Contract.ComputeStructHash(&_FlashtestationRegistry.CallOpts, rawQuote, extendedRegistrationData, nonce, deadline)
+}
+
+// DomainSeparator is a free data retrieval call binding the contract method 0xf698da25.
+//
+// Solidity: function domainSeparator() view returns(bytes32)
+func (_FlashtestationRegistry *FlashtestationRegistryCaller) DomainSeparator(opts *bind.CallOpts) ([32]byte, error) {
+	var out []interface{}
+	err := _FlashtestationRegistry.contract.Call(opts, &out, "domainSeparator")
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
+}
+
+// DomainSeparator is a free data retrieval call binding the contract method 0xf698da25.
+//
+// Solidity: function domainSeparator() view returns(bytes32)
+func (_FlashtestationRegistry *FlashtestationRegistrySession) DomainSeparator() ([32]byte, error) {
+	return _FlashtestationRegistry.Contract.DomainSeparator(&_FlashtestationRegistry.CallOpts)
+}
+
+// DomainSeparator is a free data retrieval call binding the contract method 0xf698da25.
+//
+// Solidity: function domainSeparator() view returns(bytes32)
+func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) DomainSeparator() ([32]byte, error) {
+	return _FlashtestationRegistry.Contract.DomainSeparator(&_FlashtestationRegistry.CallOpts)
 }
 
 // Eip712Domain is a free data retrieval call binding the contract method 0x84b0196e.
@@ -465,7 +497,7 @@ func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) Eip712Domain
 
 // GetRegistration is a free data retrieval call binding the contract method 0x72731062.
 //
-// Solidity: function getRegistration(address teeAddress) view returns(bool, (bool,bytes,(bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes),bytes))
+// Solidity: function getRegistration(address teeAddress) view returns(bool, (bool,bytes,(bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes),bytes,bytes32))
 func (_FlashtestationRegistry *FlashtestationRegistryCaller) GetRegistration(opts *bind.CallOpts, teeAddress common.Address) (bool, IFlashtestationRegistryRegisteredTEE, error) {
 	var out []interface{}
 	err := _FlashtestationRegistry.contract.Call(opts, &out, "getRegistration", teeAddress)
@@ -483,16 +515,61 @@ func (_FlashtestationRegistry *FlashtestationRegistryCaller) GetRegistration(opt
 
 // GetRegistration is a free data retrieval call binding the contract method 0x72731062.
 //
-// Solidity: function getRegistration(address teeAddress) view returns(bool, (bool,bytes,(bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes),bytes))
+// Solidity: function getRegistration(address teeAddress) view returns(bool, (bool,bytes,(bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes),bytes,bytes32))
 func (_FlashtestationRegistry *FlashtestationRegistrySession) GetRegistration(teeAddress common.Address) (bool, IFlashtestationRegistryRegisteredTEE, error) {
 	return _FlashtestationRegistry.Contract.GetRegistration(&_FlashtestationRegistry.CallOpts, teeAddress)
 }
 
 // GetRegistration is a free data retrieval call binding the contract method 0x72731062.
 //
-// Solidity: function getRegistration(address teeAddress) view returns(bool, (bool,bytes,(bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes),bytes))
+// Solidity: function getRegistration(address teeAddress) view returns(bool, (bool,bytes,(bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes),bytes,bytes32))
 func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) GetRegistration(teeAddress common.Address) (bool, IFlashtestationRegistryRegisteredTEE, error) {
 	return _FlashtestationRegistry.Contract.GetRegistration(&_FlashtestationRegistry.CallOpts, teeAddress)
+}
+
+// GetRegistrationStatus is a free data retrieval call binding the contract method 0xa8af4ff5.
+//
+// Solidity: function getRegistrationStatus(address teeAddress) view returns(bool isValid, bytes32 quoteHash)
+func (_FlashtestationRegistry *FlashtestationRegistryCaller) GetRegistrationStatus(opts *bind.CallOpts, teeAddress common.Address) (struct {
+	IsValid   bool
+	QuoteHash [32]byte
+}, error) {
+	var out []interface{}
+	err := _FlashtestationRegistry.contract.Call(opts, &out, "getRegistrationStatus", teeAddress)
+
+	outstruct := new(struct {
+		IsValid   bool
+		QuoteHash [32]byte
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.IsValid = *abi.ConvertType(out[0], new(bool)).(*bool)
+	outstruct.QuoteHash = *abi.ConvertType(out[1], new([32]byte)).(*[32]byte)
+
+	return *outstruct, err
+
+}
+
+// GetRegistrationStatus is a free data retrieval call binding the contract method 0xa8af4ff5.
+//
+// Solidity: function getRegistrationStatus(address teeAddress) view returns(bool isValid, bytes32 quoteHash)
+func (_FlashtestationRegistry *FlashtestationRegistrySession) GetRegistrationStatus(teeAddress common.Address) (struct {
+	IsValid   bool
+	QuoteHash [32]byte
+}, error) {
+	return _FlashtestationRegistry.Contract.GetRegistrationStatus(&_FlashtestationRegistry.CallOpts, teeAddress)
+}
+
+// GetRegistrationStatus is a free data retrieval call binding the contract method 0xa8af4ff5.
+//
+// Solidity: function getRegistrationStatus(address teeAddress) view returns(bool isValid, bytes32 quoteHash)
+func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) GetRegistrationStatus(teeAddress common.Address) (struct {
+	IsValid   bool
+	QuoteHash [32]byte
+}, error) {
+	return _FlashtestationRegistry.Contract.GetRegistrationStatus(&_FlashtestationRegistry.CallOpts, teeAddress)
 }
 
 // HashTypedDataV4 is a free data retrieval call binding the contract method 0x4980f288.
@@ -528,10 +605,10 @@ func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) HashTypedDat
 
 // Nonces is a free data retrieval call binding the contract method 0x7ecebe00.
 //
-// Solidity: function nonces(address ) view returns(uint256)
-func (_FlashtestationRegistry *FlashtestationRegistryCaller) Nonces(opts *bind.CallOpts, arg0 common.Address) (*big.Int, error) {
+// Solidity: function nonces(address teeAddress) view returns(uint256 permitNonce)
+func (_FlashtestationRegistry *FlashtestationRegistryCaller) Nonces(opts *bind.CallOpts, teeAddress common.Address) (*big.Int, error) {
 	var out []interface{}
-	err := _FlashtestationRegistry.contract.Call(opts, &out, "nonces", arg0)
+	err := _FlashtestationRegistry.contract.Call(opts, &out, "nonces", teeAddress)
 
 	if err != nil {
 		return *new(*big.Int), err
@@ -545,16 +622,16 @@ func (_FlashtestationRegistry *FlashtestationRegistryCaller) Nonces(opts *bind.C
 
 // Nonces is a free data retrieval call binding the contract method 0x7ecebe00.
 //
-// Solidity: function nonces(address ) view returns(uint256)
-func (_FlashtestationRegistry *FlashtestationRegistrySession) Nonces(arg0 common.Address) (*big.Int, error) {
-	return _FlashtestationRegistry.Contract.Nonces(&_FlashtestationRegistry.CallOpts, arg0)
+// Solidity: function nonces(address teeAddress) view returns(uint256 permitNonce)
+func (_FlashtestationRegistry *FlashtestationRegistrySession) Nonces(teeAddress common.Address) (*big.Int, error) {
+	return _FlashtestationRegistry.Contract.Nonces(&_FlashtestationRegistry.CallOpts, teeAddress)
 }
 
 // Nonces is a free data retrieval call binding the contract method 0x7ecebe00.
 //
-// Solidity: function nonces(address ) view returns(uint256)
-func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) Nonces(arg0 common.Address) (*big.Int, error) {
-	return _FlashtestationRegistry.Contract.Nonces(&_FlashtestationRegistry.CallOpts, arg0)
+// Solidity: function nonces(address teeAddress) view returns(uint256 permitNonce)
+func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) Nonces(teeAddress common.Address) (*big.Int, error) {
+	return _FlashtestationRegistry.Contract.Nonces(&_FlashtestationRegistry.CallOpts, teeAddress)
 }
 
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
@@ -621,21 +698,23 @@ func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) ProxiableUUI
 
 // RegisteredTEEs is a free data retrieval call binding the contract method 0xf745cb30.
 //
-// Solidity: function registeredTEEs(address ) view returns(bool isValid, bytes rawQuote, (bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes) parsedReportBody, bytes extendedRegistrationData)
-func (_FlashtestationRegistry *FlashtestationRegistryCaller) RegisteredTEEs(opts *bind.CallOpts, arg0 common.Address) (struct {
+// Solidity: function registeredTEEs(address teeAddress) view returns(bool isValid, bytes rawQuote, (bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes) parsedReportBody, bytes extendedRegistrationData, bytes32 quoteHash)
+func (_FlashtestationRegistry *FlashtestationRegistryCaller) RegisteredTEEs(opts *bind.CallOpts, teeAddress common.Address) (struct {
 	IsValid                  bool
 	RawQuote                 []byte
 	ParsedReportBody         TD10ReportBody
 	ExtendedRegistrationData []byte
+	QuoteHash                [32]byte
 }, error) {
 	var out []interface{}
-	err := _FlashtestationRegistry.contract.Call(opts, &out, "registeredTEEs", arg0)
+	err := _FlashtestationRegistry.contract.Call(opts, &out, "registeredTEEs", teeAddress)
 
 	outstruct := new(struct {
 		IsValid                  bool
 		RawQuote                 []byte
 		ParsedReportBody         TD10ReportBody
 		ExtendedRegistrationData []byte
+		QuoteHash                [32]byte
 	})
 	if err != nil {
 		return *outstruct, err
@@ -645,6 +724,7 @@ func (_FlashtestationRegistry *FlashtestationRegistryCaller) RegisteredTEEs(opts
 	outstruct.RawQuote = *abi.ConvertType(out[1], new([]byte)).(*[]byte)
 	outstruct.ParsedReportBody = *abi.ConvertType(out[2], new(TD10ReportBody)).(*TD10ReportBody)
 	outstruct.ExtendedRegistrationData = *abi.ConvertType(out[3], new([]byte)).(*[]byte)
+	outstruct.QuoteHash = *abi.ConvertType(out[4], new([32]byte)).(*[32]byte)
 
 	return *outstruct, err
 
@@ -652,26 +732,28 @@ func (_FlashtestationRegistry *FlashtestationRegistryCaller) RegisteredTEEs(opts
 
 // RegisteredTEEs is a free data retrieval call binding the contract method 0xf745cb30.
 //
-// Solidity: function registeredTEEs(address ) view returns(bool isValid, bytes rawQuote, (bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes) parsedReportBody, bytes extendedRegistrationData)
-func (_FlashtestationRegistry *FlashtestationRegistrySession) RegisteredTEEs(arg0 common.Address) (struct {
+// Solidity: function registeredTEEs(address teeAddress) view returns(bool isValid, bytes rawQuote, (bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes) parsedReportBody, bytes extendedRegistrationData, bytes32 quoteHash)
+func (_FlashtestationRegistry *FlashtestationRegistrySession) RegisteredTEEs(teeAddress common.Address) (struct {
 	IsValid                  bool
 	RawQuote                 []byte
 	ParsedReportBody         TD10ReportBody
 	ExtendedRegistrationData []byte
+	QuoteHash                [32]byte
 }, error) {
-	return _FlashtestationRegistry.Contract.RegisteredTEEs(&_FlashtestationRegistry.CallOpts, arg0)
+	return _FlashtestationRegistry.Contract.RegisteredTEEs(&_FlashtestationRegistry.CallOpts, teeAddress)
 }
 
 // RegisteredTEEs is a free data retrieval call binding the contract method 0xf745cb30.
 //
-// Solidity: function registeredTEEs(address ) view returns(bool isValid, bytes rawQuote, (bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes) parsedReportBody, bytes extendedRegistrationData)
-func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) RegisteredTEEs(arg0 common.Address) (struct {
+// Solidity: function registeredTEEs(address teeAddress) view returns(bool isValid, bytes rawQuote, (bytes16,bytes,bytes,bytes8,bytes8,bytes8,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes,bytes) parsedReportBody, bytes extendedRegistrationData, bytes32 quoteHash)
+func (_FlashtestationRegistry *FlashtestationRegistryCallerSession) RegisteredTEEs(teeAddress common.Address) (struct {
 	IsValid                  bool
 	RawQuote                 []byte
 	ParsedReportBody         TD10ReportBody
 	ExtendedRegistrationData []byte
+	QuoteHash                [32]byte
 }, error) {
-	return _FlashtestationRegistry.Contract.RegisteredTEEs(&_FlashtestationRegistry.CallOpts, arg0)
+	return _FlashtestationRegistry.Contract.RegisteredTEEs(&_FlashtestationRegistry.CallOpts, teeAddress)
 }
 
 // Initialize is a paid mutator transaction binding the contract method 0x485cc955.
@@ -697,63 +779,84 @@ func (_FlashtestationRegistry *FlashtestationRegistryTransactorSession) Initiali
 
 // InvalidateAttestation is a paid mutator transaction binding the contract method 0xf9b68b31.
 //
-// Solidity: function invalidateAttestation(address teeAddress) returns()
+// Solidity: function invalidateAttestation(address teeAddress) payable returns()
 func (_FlashtestationRegistry *FlashtestationRegistryTransactor) InvalidateAttestation(opts *bind.TransactOpts, teeAddress common.Address) (*types.Transaction, error) {
 	return _FlashtestationRegistry.contract.Transact(opts, "invalidateAttestation", teeAddress)
 }
 
 // InvalidateAttestation is a paid mutator transaction binding the contract method 0xf9b68b31.
 //
-// Solidity: function invalidateAttestation(address teeAddress) returns()
+// Solidity: function invalidateAttestation(address teeAddress) payable returns()
 func (_FlashtestationRegistry *FlashtestationRegistrySession) InvalidateAttestation(teeAddress common.Address) (*types.Transaction, error) {
 	return _FlashtestationRegistry.Contract.InvalidateAttestation(&_FlashtestationRegistry.TransactOpts, teeAddress)
 }
 
 // InvalidateAttestation is a paid mutator transaction binding the contract method 0xf9b68b31.
 //
-// Solidity: function invalidateAttestation(address teeAddress) returns()
+// Solidity: function invalidateAttestation(address teeAddress) payable returns()
 func (_FlashtestationRegistry *FlashtestationRegistryTransactorSession) InvalidateAttestation(teeAddress common.Address) (*types.Transaction, error) {
 	return _FlashtestationRegistry.Contract.InvalidateAttestation(&_FlashtestationRegistry.TransactOpts, teeAddress)
 }
 
-// PermitRegisterTEEService is a paid mutator transaction binding the contract method 0x4111c12b.
+// InvalidatePreviousSignature is a paid mutator transaction binding the contract method 0x87811112.
 //
-// Solidity: function permitRegisterTEEService(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, bytes signature) returns()
-func (_FlashtestationRegistry *FlashtestationRegistryTransactor) PermitRegisterTEEService(opts *bind.TransactOpts, rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, signature []byte) (*types.Transaction, error) {
-	return _FlashtestationRegistry.contract.Transact(opts, "permitRegisterTEEService", rawQuote, extendedRegistrationData, nonce, signature)
+// Solidity: function invalidatePreviousSignature(uint256 _nonce) returns()
+func (_FlashtestationRegistry *FlashtestationRegistryTransactor) InvalidatePreviousSignature(opts *bind.TransactOpts, _nonce *big.Int) (*types.Transaction, error) {
+	return _FlashtestationRegistry.contract.Transact(opts, "invalidatePreviousSignature", _nonce)
 }
 
-// PermitRegisterTEEService is a paid mutator transaction binding the contract method 0x4111c12b.
+// InvalidatePreviousSignature is a paid mutator transaction binding the contract method 0x87811112.
 //
-// Solidity: function permitRegisterTEEService(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, bytes signature) returns()
-func (_FlashtestationRegistry *FlashtestationRegistrySession) PermitRegisterTEEService(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, signature []byte) (*types.Transaction, error) {
-	return _FlashtestationRegistry.Contract.PermitRegisterTEEService(&_FlashtestationRegistry.TransactOpts, rawQuote, extendedRegistrationData, nonce, signature)
+// Solidity: function invalidatePreviousSignature(uint256 _nonce) returns()
+func (_FlashtestationRegistry *FlashtestationRegistrySession) InvalidatePreviousSignature(_nonce *big.Int) (*types.Transaction, error) {
+	return _FlashtestationRegistry.Contract.InvalidatePreviousSignature(&_FlashtestationRegistry.TransactOpts, _nonce)
 }
 
-// PermitRegisterTEEService is a paid mutator transaction binding the contract method 0x4111c12b.
+// InvalidatePreviousSignature is a paid mutator transaction binding the contract method 0x87811112.
 //
-// Solidity: function permitRegisterTEEService(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, bytes signature) returns()
-func (_FlashtestationRegistry *FlashtestationRegistryTransactorSession) PermitRegisterTEEService(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, signature []byte) (*types.Transaction, error) {
-	return _FlashtestationRegistry.Contract.PermitRegisterTEEService(&_FlashtestationRegistry.TransactOpts, rawQuote, extendedRegistrationData, nonce, signature)
+// Solidity: function invalidatePreviousSignature(uint256 _nonce) returns()
+func (_FlashtestationRegistry *FlashtestationRegistryTransactorSession) InvalidatePreviousSignature(_nonce *big.Int) (*types.Transaction, error) {
+	return _FlashtestationRegistry.Contract.InvalidatePreviousSignature(&_FlashtestationRegistry.TransactOpts, _nonce)
+}
+
+// PermitRegisterTEEService is a paid mutator transaction binding the contract method 0x0ac3302b.
+//
+// Solidity: function permitRegisterTEEService(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, uint256 deadline, bytes signature) payable returns()
+func (_FlashtestationRegistry *FlashtestationRegistryTransactor) PermitRegisterTEEService(opts *bind.TransactOpts, rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, deadline *big.Int, signature []byte) (*types.Transaction, error) {
+	return _FlashtestationRegistry.contract.Transact(opts, "permitRegisterTEEService", rawQuote, extendedRegistrationData, nonce, deadline, signature)
+}
+
+// PermitRegisterTEEService is a paid mutator transaction binding the contract method 0x0ac3302b.
+//
+// Solidity: function permitRegisterTEEService(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, uint256 deadline, bytes signature) payable returns()
+func (_FlashtestationRegistry *FlashtestationRegistrySession) PermitRegisterTEEService(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, deadline *big.Int, signature []byte) (*types.Transaction, error) {
+	return _FlashtestationRegistry.Contract.PermitRegisterTEEService(&_FlashtestationRegistry.TransactOpts, rawQuote, extendedRegistrationData, nonce, deadline, signature)
+}
+
+// PermitRegisterTEEService is a paid mutator transaction binding the contract method 0x0ac3302b.
+//
+// Solidity: function permitRegisterTEEService(bytes rawQuote, bytes extendedRegistrationData, uint256 nonce, uint256 deadline, bytes signature) payable returns()
+func (_FlashtestationRegistry *FlashtestationRegistryTransactorSession) PermitRegisterTEEService(rawQuote []byte, extendedRegistrationData []byte, nonce *big.Int, deadline *big.Int, signature []byte) (*types.Transaction, error) {
+	return _FlashtestationRegistry.Contract.PermitRegisterTEEService(&_FlashtestationRegistry.TransactOpts, rawQuote, extendedRegistrationData, nonce, deadline, signature)
 }
 
 // RegisterTEEService is a paid mutator transaction binding the contract method 0x22ba2bbf.
 //
-// Solidity: function registerTEEService(bytes rawQuote, bytes extendedRegistrationData) returns()
+// Solidity: function registerTEEService(bytes rawQuote, bytes extendedRegistrationData) payable returns()
 func (_FlashtestationRegistry *FlashtestationRegistryTransactor) RegisterTEEService(opts *bind.TransactOpts, rawQuote []byte, extendedRegistrationData []byte) (*types.Transaction, error) {
 	return _FlashtestationRegistry.contract.Transact(opts, "registerTEEService", rawQuote, extendedRegistrationData)
 }
 
 // RegisterTEEService is a paid mutator transaction binding the contract method 0x22ba2bbf.
 //
-// Solidity: function registerTEEService(bytes rawQuote, bytes extendedRegistrationData) returns()
+// Solidity: function registerTEEService(bytes rawQuote, bytes extendedRegistrationData) payable returns()
 func (_FlashtestationRegistry *FlashtestationRegistrySession) RegisterTEEService(rawQuote []byte, extendedRegistrationData []byte) (*types.Transaction, error) {
 	return _FlashtestationRegistry.Contract.RegisterTEEService(&_FlashtestationRegistry.TransactOpts, rawQuote, extendedRegistrationData)
 }
 
 // RegisterTEEService is a paid mutator transaction binding the contract method 0x22ba2bbf.
 //
-// Solidity: function registerTEEService(bytes rawQuote, bytes extendedRegistrationData) returns()
+// Solidity: function registerTEEService(bytes rawQuote, bytes extendedRegistrationData) payable returns()
 func (_FlashtestationRegistry *FlashtestationRegistryTransactorSession) RegisterTEEService(rawQuote []byte, extendedRegistrationData []byte) (*types.Transaction, error) {
 	return _FlashtestationRegistry.Contract.RegisterTEEService(&_FlashtestationRegistry.TransactOpts, rawQuote, extendedRegistrationData)
 }
@@ -1241,6 +1344,151 @@ func (_FlashtestationRegistry *FlashtestationRegistryFilterer) ParseOwnershipTra
 	return event, nil
 }
 
+// FlashtestationRegistryPreviousSignatureInvalidatedIterator is returned from FilterPreviousSignatureInvalidated and is used to iterate over the raw logs and unpacked data for PreviousSignatureInvalidated events raised by the FlashtestationRegistry contract.
+type FlashtestationRegistryPreviousSignatureInvalidatedIterator struct {
+	Event *FlashtestationRegistryPreviousSignatureInvalidated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *FlashtestationRegistryPreviousSignatureInvalidatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(FlashtestationRegistryPreviousSignatureInvalidated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(FlashtestationRegistryPreviousSignatureInvalidated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *FlashtestationRegistryPreviousSignatureInvalidatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *FlashtestationRegistryPreviousSignatureInvalidatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// FlashtestationRegistryPreviousSignatureInvalidated represents a PreviousSignatureInvalidated event raised by the FlashtestationRegistry contract.
+type FlashtestationRegistryPreviousSignatureInvalidated struct {
+	TeeAddress       common.Address
+	InvalidatedNonce *big.Int
+	Raw              types.Log // Blockchain specific contextual infos
+}
+
+// FilterPreviousSignatureInvalidated is a free log retrieval operation binding the contract event 0xaba960b001cf41ae7d1278e08bf0afa5081bfad043326cfe1e1d5ee266c9ac52.
+//
+// Solidity: event PreviousSignatureInvalidated(address indexed teeAddress, uint256 invalidatedNonce)
+func (_FlashtestationRegistry *FlashtestationRegistryFilterer) FilterPreviousSignatureInvalidated(opts *bind.FilterOpts, teeAddress []common.Address) (*FlashtestationRegistryPreviousSignatureInvalidatedIterator, error) {
+
+	var teeAddressRule []interface{}
+	for _, teeAddressItem := range teeAddress {
+		teeAddressRule = append(teeAddressRule, teeAddressItem)
+	}
+
+	logs, sub, err := _FlashtestationRegistry.contract.FilterLogs(opts, "PreviousSignatureInvalidated", teeAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return &FlashtestationRegistryPreviousSignatureInvalidatedIterator{contract: _FlashtestationRegistry.contract, event: "PreviousSignatureInvalidated", logs: logs, sub: sub}, nil
+}
+
+// WatchPreviousSignatureInvalidated is a free log subscription operation binding the contract event 0xaba960b001cf41ae7d1278e08bf0afa5081bfad043326cfe1e1d5ee266c9ac52.
+//
+// Solidity: event PreviousSignatureInvalidated(address indexed teeAddress, uint256 invalidatedNonce)
+func (_FlashtestationRegistry *FlashtestationRegistryFilterer) WatchPreviousSignatureInvalidated(opts *bind.WatchOpts, sink chan<- *FlashtestationRegistryPreviousSignatureInvalidated, teeAddress []common.Address) (event.Subscription, error) {
+
+	var teeAddressRule []interface{}
+	for _, teeAddressItem := range teeAddress {
+		teeAddressRule = append(teeAddressRule, teeAddressItem)
+	}
+
+	logs, sub, err := _FlashtestationRegistry.contract.WatchLogs(opts, "PreviousSignatureInvalidated", teeAddressRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(FlashtestationRegistryPreviousSignatureInvalidated)
+				if err := _FlashtestationRegistry.contract.UnpackLog(event, "PreviousSignatureInvalidated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParsePreviousSignatureInvalidated is a log parse operation binding the contract event 0xaba960b001cf41ae7d1278e08bf0afa5081bfad043326cfe1e1d5ee266c9ac52.
+//
+// Solidity: event PreviousSignatureInvalidated(address indexed teeAddress, uint256 invalidatedNonce)
+func (_FlashtestationRegistry *FlashtestationRegistryFilterer) ParsePreviousSignatureInvalidated(log types.Log) (*FlashtestationRegistryPreviousSignatureInvalidated, error) {
+	event := new(FlashtestationRegistryPreviousSignatureInvalidated)
+	if err := _FlashtestationRegistry.contract.UnpackLog(event, "PreviousSignatureInvalidated", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
 // FlashtestationRegistryTEEServiceInvalidatedIterator is returned from FilterTEEServiceInvalidated and is used to iterate over the raw logs and unpacked data for TEEServiceInvalidated events raised by the FlashtestationRegistry contract.
 type FlashtestationRegistryTEEServiceInvalidatedIterator struct {
 	Event *FlashtestationRegistryTEEServiceInvalidated // Event containing the contract specifics and raw log
@@ -1316,10 +1564,15 @@ type FlashtestationRegistryTEEServiceInvalidated struct {
 
 // FilterTEEServiceInvalidated is a free log retrieval operation binding the contract event 0x5bb0bbb0993a623e10dd3579bf5b9403deba943e0bfe950b740d60209c9135ef.
 //
-// Solidity: event TEEServiceInvalidated(address teeAddress)
-func (_FlashtestationRegistry *FlashtestationRegistryFilterer) FilterTEEServiceInvalidated(opts *bind.FilterOpts) (*FlashtestationRegistryTEEServiceInvalidatedIterator, error) {
+// Solidity: event TEEServiceInvalidated(address indexed teeAddress)
+func (_FlashtestationRegistry *FlashtestationRegistryFilterer) FilterTEEServiceInvalidated(opts *bind.FilterOpts, teeAddress []common.Address) (*FlashtestationRegistryTEEServiceInvalidatedIterator, error) {
 
-	logs, sub, err := _FlashtestationRegistry.contract.FilterLogs(opts, "TEEServiceInvalidated")
+	var teeAddressRule []interface{}
+	for _, teeAddressItem := range teeAddress {
+		teeAddressRule = append(teeAddressRule, teeAddressItem)
+	}
+
+	logs, sub, err := _FlashtestationRegistry.contract.FilterLogs(opts, "TEEServiceInvalidated", teeAddressRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1328,10 +1581,15 @@ func (_FlashtestationRegistry *FlashtestationRegistryFilterer) FilterTEEServiceI
 
 // WatchTEEServiceInvalidated is a free log subscription operation binding the contract event 0x5bb0bbb0993a623e10dd3579bf5b9403deba943e0bfe950b740d60209c9135ef.
 //
-// Solidity: event TEEServiceInvalidated(address teeAddress)
-func (_FlashtestationRegistry *FlashtestationRegistryFilterer) WatchTEEServiceInvalidated(opts *bind.WatchOpts, sink chan<- *FlashtestationRegistryTEEServiceInvalidated) (event.Subscription, error) {
+// Solidity: event TEEServiceInvalidated(address indexed teeAddress)
+func (_FlashtestationRegistry *FlashtestationRegistryFilterer) WatchTEEServiceInvalidated(opts *bind.WatchOpts, sink chan<- *FlashtestationRegistryTEEServiceInvalidated, teeAddress []common.Address) (event.Subscription, error) {
 
-	logs, sub, err := _FlashtestationRegistry.contract.WatchLogs(opts, "TEEServiceInvalidated")
+	var teeAddressRule []interface{}
+	for _, teeAddressItem := range teeAddress {
+		teeAddressRule = append(teeAddressRule, teeAddressItem)
+	}
+
+	logs, sub, err := _FlashtestationRegistry.contract.WatchLogs(opts, "TEEServiceInvalidated", teeAddressRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1365,7 +1623,7 @@ func (_FlashtestationRegistry *FlashtestationRegistryFilterer) WatchTEEServiceIn
 
 // ParseTEEServiceInvalidated is a log parse operation binding the contract event 0x5bb0bbb0993a623e10dd3579bf5b9403deba943e0bfe950b740d60209c9135ef.
 //
-// Solidity: event TEEServiceInvalidated(address teeAddress)
+// Solidity: event TEEServiceInvalidated(address indexed teeAddress)
 func (_FlashtestationRegistry *FlashtestationRegistryFilterer) ParseTEEServiceInvalidated(log types.Log) (*FlashtestationRegistryTEEServiceInvalidated, error) {
 	event := new(FlashtestationRegistryTEEServiceInvalidated)
 	if err := _FlashtestationRegistry.contract.UnpackLog(event, "TEEServiceInvalidated", log); err != nil {
@@ -1452,10 +1710,15 @@ type FlashtestationRegistryTEEServiceRegistered struct {
 
 // FilterTEEServiceRegistered is a free log retrieval operation binding the contract event 0x206fdb1a74851a8542447b8b6704db24a36b906a7297cc23c2b984dc357b9978.
 //
-// Solidity: event TEEServiceRegistered(address teeAddress, bytes rawQuote, bool alreadyExists)
-func (_FlashtestationRegistry *FlashtestationRegistryFilterer) FilterTEEServiceRegistered(opts *bind.FilterOpts) (*FlashtestationRegistryTEEServiceRegisteredIterator, error) {
+// Solidity: event TEEServiceRegistered(address indexed teeAddress, bytes rawQuote, bool alreadyExists)
+func (_FlashtestationRegistry *FlashtestationRegistryFilterer) FilterTEEServiceRegistered(opts *bind.FilterOpts, teeAddress []common.Address) (*FlashtestationRegistryTEEServiceRegisteredIterator, error) {
 
-	logs, sub, err := _FlashtestationRegistry.contract.FilterLogs(opts, "TEEServiceRegistered")
+	var teeAddressRule []interface{}
+	for _, teeAddressItem := range teeAddress {
+		teeAddressRule = append(teeAddressRule, teeAddressItem)
+	}
+
+	logs, sub, err := _FlashtestationRegistry.contract.FilterLogs(opts, "TEEServiceRegistered", teeAddressRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1464,10 +1727,15 @@ func (_FlashtestationRegistry *FlashtestationRegistryFilterer) FilterTEEServiceR
 
 // WatchTEEServiceRegistered is a free log subscription operation binding the contract event 0x206fdb1a74851a8542447b8b6704db24a36b906a7297cc23c2b984dc357b9978.
 //
-// Solidity: event TEEServiceRegistered(address teeAddress, bytes rawQuote, bool alreadyExists)
-func (_FlashtestationRegistry *FlashtestationRegistryFilterer) WatchTEEServiceRegistered(opts *bind.WatchOpts, sink chan<- *FlashtestationRegistryTEEServiceRegistered) (event.Subscription, error) {
+// Solidity: event TEEServiceRegistered(address indexed teeAddress, bytes rawQuote, bool alreadyExists)
+func (_FlashtestationRegistry *FlashtestationRegistryFilterer) WatchTEEServiceRegistered(opts *bind.WatchOpts, sink chan<- *FlashtestationRegistryTEEServiceRegistered, teeAddress []common.Address) (event.Subscription, error) {
 
-	logs, sub, err := _FlashtestationRegistry.contract.WatchLogs(opts, "TEEServiceRegistered")
+	var teeAddressRule []interface{}
+	for _, teeAddressItem := range teeAddress {
+		teeAddressRule = append(teeAddressRule, teeAddressItem)
+	}
+
+	logs, sub, err := _FlashtestationRegistry.contract.WatchLogs(opts, "TEEServiceRegistered", teeAddressRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1501,7 +1769,7 @@ func (_FlashtestationRegistry *FlashtestationRegistryFilterer) WatchTEEServiceRe
 
 // ParseTEEServiceRegistered is a log parse operation binding the contract event 0x206fdb1a74851a8542447b8b6704db24a36b906a7297cc23c2b984dc357b9978.
 //
-// Solidity: event TEEServiceRegistered(address teeAddress, bytes rawQuote, bool alreadyExists)
+// Solidity: event TEEServiceRegistered(address indexed teeAddress, bytes rawQuote, bool alreadyExists)
 func (_FlashtestationRegistry *FlashtestationRegistryFilterer) ParseTEEServiceRegistered(log types.Log) (*FlashtestationRegistryTEEServiceRegistered, error) {
 	event := new(FlashtestationRegistryTEEServiceRegistered)
 	if err := _FlashtestationRegistry.contract.UnpackLog(event, "TEEServiceRegistered", log); err != nil {

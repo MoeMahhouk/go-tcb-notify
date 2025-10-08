@@ -54,8 +54,18 @@ func (p *QuoteProcessor) ProcessQuote(raw []byte) (*models.RegistryQuote, error)
 
 	// Extract FMSPC from quote
 	fmspc := ""
-	if parsed, err := p.parser.ParseQuote(raw); err == nil {
+	parsed, err := p.parser.ParseQuote(raw)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"quote_len": len(raw),
+			"error":     err,
+		}).Warn("Failed to parse quote for FMSPC extraction")
+	} else {
 		fmspc = parsed.FMSPC
+		logrus.WithFields(logrus.Fields{
+			"fmspc":     fmspc,
+			"quote_len": len(raw),
+		}).Debug("Successfully extracted FMSPC from quote")
 	}
 
 	return &models.RegistryQuote{
@@ -174,6 +184,14 @@ func (i *Ingester) processBatch(ctx context.Context) error {
 	}
 
 	if len(events) == 0 {
+		// No events in this batch, but save checkpoint to advance
+		if err := i.saveCheckpoint(ctx); err != nil {
+			return fmt.Errorf("save checkpoint: %w", err)
+		}
+		i.logger.WithFields(logrus.Fields{
+			"from": from,
+			"to":   to,
+		}).Debug("No events in batch, advancing checkpoint")
 		return nil
 	}
 
@@ -189,16 +207,16 @@ func (i *Ingester) processBatch(ctx context.Context) error {
 
 	// Update checkpoint
 	if processed > 0 {
-		if err := i.saveCheckpoint(ctx); err != nil {
-			return fmt.Errorf("save checkpoint: %w", err)
-		}
-
 		i.logger.WithFields(logrus.Fields{
 			"processed": processed,
 			"from":      from,
 			"to":        to,
 			"last":      fmt.Sprintf("(%d,%d)", i.lastBlock, i.lastIdx),
 		}).Info("Processed registry events")
+	}
+
+	if err := i.saveCheckpoint(ctx); err != nil {
+		return fmt.Errorf("save checkpoint: %w", err)
 	}
 
 	return nil
@@ -235,6 +253,10 @@ func (i *Ingester) fetchEvents(ctx context.Context, from, to uint64) ([]Event, e
 		lastEvent := events[len(events)-1]
 		i.lastBlock = lastEvent.BlockNumber
 		i.lastIdx = lastEvent.LogIndex
+	} else {
+		// No events found, but still advance to the end of this batch
+		i.lastBlock = to
+		i.lastIdx = 0
 	}
 
 	return events, nil
@@ -246,7 +268,7 @@ func (i *Ingester) fetchRegistrationEvents(ctx context.Context, from, to uint64)
 		Start:   from,
 		End:     &to,
 		Context: ctx,
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("filter registration events: %w", err)
 	}
@@ -287,7 +309,7 @@ func (i *Ingester) fetchInvalidationEvents(ctx context.Context, from, to uint64)
 		Start:   from,
 		End:     &to,
 		Context: ctx,
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("filter invalidation events: %w", err)
 	}
@@ -336,6 +358,14 @@ func (i *Ingester) processEvent(ctx context.Context, event Event) error {
 
 // processRegistrationEvent processes a TEEServiceRegistered event
 func (i *Ingester) processRegistrationEvent(ctx context.Context, event Event) error {
+	// DEBUG: Log raw quote info
+	i.logger.WithFields(logrus.Fields{
+		"address":       event.TeeAddress.Hex(),
+		"block":         event.BlockNumber,
+		"raw_quote_len": len(event.RawQuote),
+		"first_bytes":   hex.EncodeToString(event.RawQuote[:min(20, len(event.RawQuote))]),
+	}).Debug("Processing registration event")
+
 	// Process the quote (business logic)
 	processed, err := i.processor.ProcessQuote(event.RawQuote)
 	if err != nil {
