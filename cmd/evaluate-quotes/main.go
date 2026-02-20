@@ -66,7 +66,7 @@ func main() {
 		&cfg.EvaluateQuotes,
 	)
 
-	if err := evaluatorService.Run(ctx); err != nil {
+	if err := evaluatorService.Run(ctx); err != nil && err != context.Canceled {
 		logrus.WithError(err).Error("Evaluator service failed")
 	}
 }

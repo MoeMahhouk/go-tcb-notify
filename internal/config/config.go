@@ -51,16 +51,15 @@ type IngestRegistry struct {
 }
 
 type EvaluateQuotes struct {
-	BatchSize        int
 	PollInterval     time.Duration // How often to check for new quotes
 	GetCollateral    bool          // Whether to fetch collateral from Intel PCS
 	CheckRevocations bool          // Whether to check certificate revocations
 }
 
 type PCS struct {
-	BaseURL       string        // Intel PCS API base URL
-	APIKey        string        // Optional API key
-	POLL_INTERVAL time.Duration // How often to refresh TCB info
+	BaseURL      string        // Intel PCS API base URL
+	APIKey       string        // Optional API key
+	PollInterval time.Duration // How often to refresh TCB info
 }
 
 // Helper functions
@@ -78,17 +77,6 @@ func getDuration(key string, def time.Duration) time.Duration {
 			return d
 		}
 		log.Printf("WARN: invalid duration %s=%q, using default %s", key, v, def)
-	}
-	return def
-}
-
-func getInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		n, err := strconv.Atoi(v)
-		if err == nil {
-			return n
-		}
-		log.Printf("WARN: invalid int %s=%q, using default %d", key, v, def)
 	}
 	return def
 }
@@ -155,16 +143,15 @@ func Load() (*Config, error) {
 		},
 
 		EvaluateQuotes: EvaluateQuotes{
-			BatchSize:        getInt("EVAL_BATCH_SIZE", 500),
 			PollInterval:     getDuration("EVAL_POLL_INTERVAL", 5*time.Second),
-			GetCollateral:    getBool("EVAL_GET_COLLATERAL", true),    // Default to true for security
-			CheckRevocations: getBool("EVAL_CHECK_REVOCATIONS", true), // Default to true for security
+			GetCollateral:    getBool("EVAL_GET_COLLATERAL", true),
+			CheckRevocations: getBool("EVAL_CHECK_REVOCATIONS", true),
 		},
 
 		PCS: PCS{
-			BaseURL:       getenv("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
-			APIKey:        getenv("PCS_API_KEY", ""),
-			POLL_INTERVAL: getDuration("PCS_POLL_INTERVAL", 1*time.Hour),
+			BaseURL:      getenv("PCS_BASE_URL", "https://api.trustedservices.intel.com"),
+			APIKey:       getenv("PCS_API_KEY", ""),
+			PollInterval: getDuration("PCS_POLL_INTERVAL", 1*time.Hour),
 		},
 	}
 

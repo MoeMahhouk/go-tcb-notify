@@ -44,6 +44,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to Ethereum: %v", err)
 	}
+	defer ethClient.Close()
 
 	// Create storage implementations
 	quoteStore := clickhouse.NewQuoteStore(db)
@@ -56,6 +57,7 @@ func main() {
 		ethClient,
 		cfg.Ethereum.RegistryAddress,
 		&cfg.IngestRegistry,
+		cfg.Ethereum.StartBlock,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create ingester: %v", err)

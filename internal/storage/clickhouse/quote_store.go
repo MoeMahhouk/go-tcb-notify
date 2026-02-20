@@ -60,18 +60,23 @@ func (s *QuoteStore) GetActiveQuotes(ctx context.Context) ([]*models.RegistryQuo
 	var quotes []*models.RegistryQuote
 	for rows.Next() {
 		var q models.RegistryQuote
+		var quoteHex string
 		err := rows.Scan(
 			&q.ServiceAddress,
 			&q.BlockNumber,
 			&q.BlockTime,
 			&q.TxHash,
 			&q.LogIndex,
-			&q.QuoteBytes,
+			&quoteHex,
 			&q.QuoteLength,
 			&q.QuoteHash,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan quote: %w", err)
+		}
+		q.QuoteBytes, err = hex.DecodeString(quoteHex)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode quote hex for %s: %w", q.ServiceAddress, err)
 		}
 		quotes = append(quotes, &q)
 	}

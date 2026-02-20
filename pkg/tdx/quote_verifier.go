@@ -105,22 +105,13 @@ func (v *QuoteVerifier) VerifyAndEvaluateQuote(quoteBytes []byte) (*models.Quote
 	evaluation.MrSignerSeam = parsedQuote.MrSignerSeam
 	evaluation.ReportData = parsedQuote.ReportData
 
-	// Verify using go-tdx-guest
+	// Verify using go-tdx-guest — reuse the already-parsed quote proto
 	verifyOpts := verify.Options{
 		GetCollateral:    v.getCollateral,
 		CheckRevocations: v.checkRevocations,
 	}
 
-	// Parse the quote for verification
-	quoteObj, err := abi.QuoteToProto(quoteBytes)
-	if err != nil {
-		evaluation.Status = models.StatusInvalidFormat
-		evaluation.ErrorMessage = err.Error()
-		return evaluation, nil
-	}
-
-	// Use verify.TdxQuote (takes the quote proto as interface{})
-	err = verify.TdxQuote(quoteObj, &verifyOpts)
+	err = verify.TdxQuote(parsedQuote.Quote, &verifyOpts)
 	if err != nil {
 		// Parse error to determine status
 		evaluation.Status, evaluation.TCBStatus = v.parseVerificationError(err)

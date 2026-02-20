@@ -52,23 +52,3 @@ func (p *QuoteParser) ParseQuote(raw []byte) (*models.ParsedQuote, error) {
 	return out, nil
 }
 
-func (p *QuoteParser) GetQuoteInfo(parsed *models.ParsedQuote) map[string]any {
-	info := map[string]any{
-		"fmspc":         parsed.FMSPC,
-		"tcbComponents": parsed.TCBComponents,
-	}
-	if parsed.Quote != nil && parsed.Quote.Header != nil {
-		info["version"] = parsed.Quote.Header.Version
-		info["attestationKeyType"] = parsed.Quote.Header.AttestationKeyType
-		info["teeType"] = fmt.Sprintf("0x%x", parsed.Quote.Header.TeeType)
-	}
-	if parsed.Quote != nil && parsed.Quote.TdQuoteBody != nil {
-		if parsed.Quote.TdQuoteBody.MrTd != nil {
-			info["mrTd"] = hex.EncodeToString(parsed.Quote.TdQuoteBody.MrTd)
-		}
-		if parsed.Quote.TdQuoteBody.ReportData != nil {
-			info["reportData"] = hex.EncodeToString(parsed.Quote.TdQuoteBody.ReportData)
-		}
-	}
-	return info
-}

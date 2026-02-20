@@ -25,8 +25,8 @@ CREATE TABLE IF NOT EXISTS tdx_quote_evaluations (
     service_address String,
     quote_hash String,
     quote_length UInt32,
-    status Enum('Valid' = 1, 'Invalid' = 2),
-    tcb_status Enum('UpToDate' = 1, 'OutOfDate' = 2, 'Revoked' = 3, 'ConfigurationNeeded' = 4, 'Unknown' = 5),
+    status LowCardinality(String),
+    tcb_status LowCardinality(String),
     error_message String DEFAULT '',
     fmspc String DEFAULT '',
     sgx_components String DEFAULT '',  -- Hex encoded 16 bytes
@@ -173,11 +173,11 @@ ENGINE = AggregatingMergeTree()
 ORDER BY (fmspc, last_tcb_update)
 POPULATE AS
 WITH latest_events AS (
-    SELECT 
+    SELECT
         service_address,
-        argMax(event_type, block_number) as latest_event_type,
-        argMax(fmspc, block_number) as fmspc,
-        argMax(quote_sha256, block_number) as quote_hash
+        argMax(event_type, (block_number, log_index)) as latest_event_type,
+        argMax(fmspc, (block_number, log_index)) as fmspc,
+        argMax(quote_sha256, (block_number, log_index)) as quote_hash
     FROM registry_quotes_raw
     GROUP BY service_address
 )

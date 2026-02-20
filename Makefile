@@ -43,7 +43,7 @@ bindings: build-contracts
 	@echo "==> Wrote $(BINDINGS_FILE)"
 
 ## Build all executables
-build:
+build: bindings
 	mkdir -p bin
 	go build -o $(BIN_INGEST) ./cmd/ingest-registry
 	go build -o $(BIN_PCS)    ./cmd/fetch-pcs

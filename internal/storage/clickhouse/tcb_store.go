@@ -89,7 +89,7 @@ func (s *TCBStore) GetAllFMSPCs(ctx context.Context) ([]string, error) {
 
 // UpdateFMSPCSeen updates the last seen time for an FMSPC
 func (s *TCBStore) UpdateFMSPCSeen(ctx context.Context, fmspc string) error {
-	err := s.conn.Exec(ctx, UpdateFMSPCSeen, fmspc, time.Now())
+	err := s.conn.Exec(ctx, UpdateFMSPCSeen, fmspc, time.Now(), fmspc)
 	if err != nil {
 		return fmt.Errorf("failed to update FMSPC seen time: %w", err)
 	}

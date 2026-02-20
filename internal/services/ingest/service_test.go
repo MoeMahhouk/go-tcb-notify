@@ -8,6 +8,7 @@ import (
 	"github.com/MoeMahhouk/go-tcb-notify/internal/mocks"
 	"github.com/MoeMahhouk/go-tcb-notify/pkg/models"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -111,6 +112,7 @@ func TestIngester_ProcessEvent(t *testing.T) {
 				quoteStore:  mockQuoteStore,
 				offsetStore: mockOffsetStore,
 				processor:   NewQuoteProcessor(),
+				logger:      logrus.WithField("service", "test"),
 			}
 
 			// Process event

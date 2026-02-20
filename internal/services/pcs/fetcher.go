@@ -3,6 +3,7 @@ package pcs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -57,7 +58,7 @@ func (f *Fetcher) Run(ctx context.Context) error {
 		f.logger.WithError(err).Error("Initial PCS fetch failed")
 	}
 
-	ticker := time.NewTicker(f.config.POLL_INTERVAL)
+	ticker := time.NewTicker(f.config.PollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -144,7 +145,11 @@ func (f *Fetcher) fetchTCBInfoForAll(ctx context.Context, fmspcs []models.FMSPCR
 		}
 
 		// Small delay to avoid rate limiting
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return stats
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 
 	return stats
@@ -154,7 +159,8 @@ func (f *Fetcher) fetchTCBInfoForAll(ctx context.Context, fmspcs []models.FMSPCR
 func (f *Fetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) (bool, error) {
 	// Check if update is needed
 	currentEvalNum, err := f.getCurrentEvalNumber(ctx, fmspc)
-	if err != nil && err != ErrNotFound {
+	isFirstTime := err == ErrNotFound
+	if err != nil && !isFirstTime {
 		return false, fmt.Errorf("get current eval number: %w", err)
 	}
 
@@ -176,7 +182,6 @@ func (f *Fetcher) fetchAndStoreTCBInfo(ctx context.Context, fmspc string) (bool,
 
 	// Check if updated (or if this is the first time we're storing this FMSPC)
 	updated := tcbInfo.TCBEvaluationDataNumber > currentEvalNum
-	isFirstTime := err == ErrNotFound
 
 	// Always store TCB info if it's new or updated
 	if updated || isFirstTime {
@@ -298,4 +303,4 @@ func (f *Fetcher) createTCBUpdateAlert(ctx context.Context, fmspc string, oldEva
 	return f.alertStore.CreateAlert(ctx, alert)
 }
 
-var ErrNotFound = fmt.Errorf("not found")
+var ErrNotFound = errors.New("not found")

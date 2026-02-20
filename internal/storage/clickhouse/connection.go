@@ -28,7 +28,10 @@ func Open(ctx context.Context, cfg *config.ClickHouse) (clickhouse.Conn, error) 
 		},
 	}
 	if cfg.Secure {
-		opts.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
+		opts.TLS = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: cfg.SkipVerify,
+		}
 	}
 	conn, err := clickhouse.Open(opts)
 	if err != nil {

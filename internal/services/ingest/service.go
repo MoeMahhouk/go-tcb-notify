@@ -90,8 +90,9 @@ type Ingester struct {
 	processor *QuoteProcessor
 
 	// Configuration and logging
-	config *config.IngestRegistry
-	logger *logrus.Entry
+	config     *config.IngestRegistry
+	startBlock uint64
+	logger     *logrus.Entry
 
 	// State
 	lastBlock uint64
@@ -105,6 +106,7 @@ func NewIngester(
 	ethClient *ethclient.Client,
 	registryAddr common.Address,
 	cfg *config.IngestRegistry,
+	startBlock uint64,
 ) (*Ingester, error) {
 	registry, err := bindings.NewFlashtestationRegistry(registryAddr, ethClient)
 	if err != nil {
@@ -118,6 +120,7 @@ func NewIngester(
 		registry:    registry,
 		processor:   NewQuoteProcessor(),
 		config:      cfg,
+		startBlock:  startBlock,
 		logger:      logrus.WithField("service", ServiceName),
 	}, nil
 }
@@ -127,72 +130,67 @@ func (i *Ingester) Run(ctx context.Context) error {
 	i.logger.WithFields(logrus.Fields{
 		"poll_interval": i.config.PollInterval,
 		"batch_blocks":  i.config.BatchBlocks,
+		"start_block":   i.startBlock,
 	}).Info("Starting registry ingestion service")
 
 	// Get last processed checkpoint
 	if err := i.loadCheckpoint(ctx); err != nil {
-		i.logger.WithError(err).Warn("Failed to load checkpoint, starting from beginning")
+		i.logger.WithError(err).Warn("Failed to load checkpoint, starting from configured start block")
 	}
-
-	ticker := time.NewTicker(i.config.PollInterval)
-	defer ticker.Stop()
-
-	// Process immediately
-	i.processOnce(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
 			i.logger.Info("Registry ingestion service stopped")
 			return ctx.Err()
-		case <-ticker.C:
-			i.processOnce(ctx)
+		default:
+		}
+
+		caughtUp, err := i.processBatch(ctx)
+		if err != nil {
+			i.logger.WithError(err).Error("Failed to process batch")
+		}
+
+		// Wait before next batch: use poll interval when at tip or on error, skip when catching up
+		if caughtUp || err != nil {
+			select {
+			case <-ctx.Done():
+				i.logger.Info("Registry ingestion service stopped")
+				return ctx.Err()
+			case <-time.After(i.config.PollInterval):
+			}
 		}
 	}
 }
 
-// processOnce processes one batch of events
-func (i *Ingester) processOnce(ctx context.Context) {
-	if err := i.processBatch(ctx); err != nil {
-		i.logger.WithError(err).Error("Failed to process batch")
-	}
-}
-
-// processBatch processes a batch of registry events
-func (i *Ingester) processBatch(ctx context.Context) error {
+// processBatch processes a batch of registry events.
+// Returns true when the ingester is caught up to the chain tip.
+func (i *Ingester) processBatch(ctx context.Context) (caughtUp bool, err error) {
 	// Get latest block
 	head, err := i.ethClient.HeaderByNumber(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("get latest block: %w", err)
+		return false, fmt.Errorf("get latest block: %w", err)
+	}
+
+	// Safety margin: the RPC may report a head via eth_blockNumber that
+	// eth_getLogs can't serve yet. Subtract a few blocks to avoid this race.
+	const tipSafetyMargin = 4
+	headNum := head.Number.Uint64()
+	if headNum > tipSafetyMargin {
+		headNum -= tipSafetyMargin
 	}
 
 	// Calculate batch range
 	from := i.lastBlock + 1
-	if i.lastBlock == 0 && i.lastIdx == 0 {
-		from = 0 // First run
-	}
-
-	to := minU64(from+i.config.BatchBlocks-1, head.Number.Uint64())
-	if from > to {
-		return nil // Nothing to process
+	to := min(from+i.config.BatchBlocks-1, headNum)
+	if from > headNum {
+		return true, nil // At the tip, nothing to process
 	}
 
 	// Query events
 	events, err := i.fetchEvents(ctx, from, to)
 	if err != nil {
-		return fmt.Errorf("fetch events: %w", err)
-	}
-
-	if len(events) == 0 {
-		// No events in this batch, but save checkpoint to advance
-		if err := i.saveCheckpoint(ctx); err != nil {
-			return fmt.Errorf("save checkpoint: %w", err)
-		}
-		i.logger.WithFields(logrus.Fields{
-			"from": from,
-			"to":   to,
-		}).Debug("No events in batch, advancing checkpoint")
-		return nil
+		return false, fmt.Errorf("fetch events: %w", err)
 	}
 
 	// Process and store events
@@ -205,36 +203,44 @@ func (i *Ingester) processBatch(ctx context.Context) error {
 		processed++
 	}
 
-	// Update checkpoint
+	// Advance checkpoint to end of batch
+	i.lastBlock = to
+	i.lastIdx = 0
+
 	if processed > 0 {
 		i.logger.WithFields(logrus.Fields{
 			"processed": processed,
 			"from":      from,
 			"to":        to,
-			"last":      fmt.Sprintf("(%d,%d)", i.lastBlock, i.lastIdx),
 		}).Info("Processed registry events")
+	} else {
+		i.logger.WithFields(logrus.Fields{
+			"from": from,
+			"to":   to,
+		}).Debug("No events in batch, advancing checkpoint")
 	}
 
 	if err := i.saveCheckpoint(ctx); err != nil {
-		return fmt.Errorf("save checkpoint: %w", err)
+		return false, fmt.Errorf("save checkpoint: %w", err)
 	}
 
-	return nil
+	return to >= headNum, nil
 }
 
 // fetchEvents fetches events from the registry
 func (i *Ingester) fetchEvents(ctx context.Context, from, to uint64) ([]Event, error) {
 	var events []Event
+	headerCache := make(map[uint64]time.Time)
 
 	// Fetch TEEServiceRegistered events
-	regEvents, err := i.fetchRegistrationEvents(ctx, from, to)
+	regEvents, err := i.fetchRegistrationEvents(ctx, from, to, headerCache)
 	if err != nil {
 		return nil, fmt.Errorf("fetch registration events: %w", err)
 	}
 	events = append(events, regEvents...)
 
 	// Fetch TEEServiceInvalidated events
-	invEvents, err := i.fetchInvalidationEvents(ctx, from, to)
+	invEvents, err := i.fetchInvalidationEvents(ctx, from, to, headerCache)
 	if err != nil {
 		return nil, fmt.Errorf("fetch invalidation events: %w", err)
 	}
@@ -248,22 +254,25 @@ func (i *Ingester) fetchEvents(ctx context.Context, from, to uint64) ([]Event, e
 		return events[i].LogIndex < events[j].LogIndex
 	})
 
-	// Update last processed position from the last event
-	if len(events) > 0 {
-		lastEvent := events[len(events)-1]
-		i.lastBlock = lastEvent.BlockNumber
-		i.lastIdx = lastEvent.LogIndex
-	} else {
-		// No events found, but still advance to the end of this batch
-		i.lastBlock = to
-		i.lastIdx = 0
-	}
-
 	return events, nil
 }
 
+// getBlockTime returns the timestamp for a block, using a cache to avoid redundant RPC calls.
+func (i *Ingester) getBlockTime(ctx context.Context, blockNumber uint64, cache map[uint64]time.Time) (time.Time, error) {
+	if t, ok := cache[blockNumber]; ok {
+		return t, nil
+	}
+	header, err := i.ethClient.HeaderByNumber(ctx, big.NewInt(int64(blockNumber)))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get block header %d: %w", blockNumber, err)
+	}
+	t := time.Unix(int64(header.Time), 0).UTC()
+	cache[blockNumber] = t
+	return t, nil
+}
+
 // fetchRegistrationEvents fetches TEEServiceRegistered events
-func (i *Ingester) fetchRegistrationEvents(ctx context.Context, from, to uint64) ([]Event, error) {
+func (i *Ingester) fetchRegistrationEvents(ctx context.Context, from, to uint64, headerCache map[uint64]time.Time) ([]Event, error) {
 	iter, err := i.registry.FilterTEEServiceRegistered(&bind.FilterOpts{
 		Start:   from,
 		End:     &to,
@@ -279,10 +288,9 @@ func (i *Ingester) fetchRegistrationEvents(ctx context.Context, from, to uint64)
 		ev := iter.Event
 		lg := ev.Raw
 
-		// Get block timestamp
-		header, err := i.ethClient.HeaderByNumber(ctx, big.NewInt(int64(lg.BlockNumber)))
+		blockTime, err := i.getBlockTime(ctx, lg.BlockNumber, headerCache)
 		if err != nil {
-			return nil, fmt.Errorf("get block header: %w", err)
+			return nil, err
 		}
 
 		events = append(events, Event{
@@ -292,7 +300,7 @@ func (i *Ingester) fetchRegistrationEvents(ctx context.Context, from, to uint64)
 			BlockNumber: lg.BlockNumber,
 			LogIndex:    uint(lg.Index),
 			TxHash:      lg.TxHash,
-			BlockTime:   time.Unix(int64(header.Time), 0).UTC(),
+			BlockTime:   blockTime,
 		})
 	}
 
@@ -304,7 +312,7 @@ func (i *Ingester) fetchRegistrationEvents(ctx context.Context, from, to uint64)
 }
 
 // fetchInvalidationEvents fetches TEEServiceInvalidated events
-func (i *Ingester) fetchInvalidationEvents(ctx context.Context, from, to uint64) ([]Event, error) {
+func (i *Ingester) fetchInvalidationEvents(ctx context.Context, from, to uint64, headerCache map[uint64]time.Time) ([]Event, error) {
 	iter, err := i.registry.FilterTEEServiceInvalidated(&bind.FilterOpts{
 		Start:   from,
 		End:     &to,
@@ -320,20 +328,19 @@ func (i *Ingester) fetchInvalidationEvents(ctx context.Context, from, to uint64)
 		ev := iter.Event
 		lg := ev.Raw
 
-		// Get block timestamp
-		header, err := i.ethClient.HeaderByNumber(ctx, big.NewInt(int64(lg.BlockNumber)))
+		blockTime, err := i.getBlockTime(ctx, lg.BlockNumber, headerCache)
 		if err != nil {
-			return nil, fmt.Errorf("get block header: %w", err)
+			return nil, err
 		}
 
 		events = append(events, Event{
 			Type:        "TEEServiceInvalidated",
 			TeeAddress:  ev.TeeAddress,
-			RawQuote:    nil, // No quote data for invalidation events
+			RawQuote:    nil,
 			BlockNumber: lg.BlockNumber,
 			LogIndex:    uint(lg.Index),
 			TxHash:      lg.TxHash,
-			BlockTime:   time.Unix(int64(header.Time), 0).UTC(),
+			BlockTime:   blockTime,
 		})
 	}
 
@@ -407,7 +414,12 @@ func (i *Ingester) processInvalidationEvent(ctx context.Context, event Event) er
 func (i *Ingester) loadCheckpoint(ctx context.Context) error {
 	blockNumber, logIndex, err := i.offsetStore.LoadOffset(ctx, ServiceName)
 	if err != nil {
-		i.lastBlock = 0
+		// No checkpoint found — set lastBlock so that from = lastBlock + 1 = startBlock
+		if i.startBlock > 0 {
+			i.lastBlock = i.startBlock - 1
+		} else {
+			i.lastBlock = 0
+		}
 		i.lastIdx = 0
 		return err
 	}
@@ -422,9 +434,3 @@ func (i *Ingester) saveCheckpoint(ctx context.Context) error {
 	return i.offsetStore.SaveOffset(ctx, ServiceName, i.lastBlock, uint32(i.lastIdx))
 }
 
-func minU64(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
-}

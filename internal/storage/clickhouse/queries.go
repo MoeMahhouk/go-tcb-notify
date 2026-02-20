@@ -22,19 +22,21 @@ const (
 	// Quote Evaluation (used by evaluate-quotes)
 	// ===================
 
-	// Get ALL currently active (non-invalidated) quotes for evaluation
+	// Get ALL currently active (non-invalidated) quotes for evaluation.
+	// Uses (block_number, log_index) as composite ordering key so that
+	// two events in the same block are resolved by log_index.
 	GetActiveQuotes = `
 		WITH latest_events AS (
 			SELECT
 				service_address,
-				argMax(event_type,      block_number) AS latest_event_type,
-				argMax(block_number,    block_number) AS latest_block_number,
-				argMax(block_time,      block_number) AS latest_block_time,
-				argMax(tx_hash,         block_number) AS latest_tx_hash,
-				argMax(log_index,       block_number) AS latest_log_index,
-				argMax(quote_bytes,     block_number) AS latest_quote_bytes,
-				argMax(quote_len,       block_number) AS latest_quote_len,
-				argMax(quote_sha256,    block_number) AS latest_quote_sha256
+				argMax(event_type,      (block_number, log_index)) AS latest_event_type,
+				argMax(block_number,    (block_number, log_index)) AS latest_block_number,
+				argMax(block_time,      (block_number, log_index)) AS latest_block_time,
+				argMax(tx_hash,         (block_number, log_index)) AS latest_tx_hash,
+				argMax(log_index,       (block_number, log_index)) AS latest_log_index,
+				argMax(quote_bytes,     (block_number, log_index)) AS latest_quote_bytes,
+				argMax(quote_len,       (block_number, log_index)) AS latest_quote_len,
+				argMax(quote_sha256,    (block_number, log_index)) AS latest_quote_sha256
 			FROM registry_quotes_raw
 			GROUP BY service_address
 		)
@@ -54,10 +56,10 @@ const (
 	// Count registered quotes affected by FMSPC change (only active quotes)
 	CountAffectedRegisteredQuotes = `
 		WITH latest_events AS (
-			SELECT 
+			SELECT
 				service_address,
-				argMax(event_type, block_number) as latest_event_type,
-				argMax(fmspc, block_number) as fmspc
+				argMax(event_type, (block_number, log_index)) as latest_event_type,
+				argMax(fmspc, (block_number, log_index)) as fmspc
 			FROM registry_quotes_raw
 			WHERE fmspc = ?
 			GROUP BY service_address
@@ -138,10 +140,14 @@ const (
 		WHERE is_active = 1
 	`
 
-	// Update FMSPC last seen time
+	// Update FMSPC last seen time — include all columns to prevent
+	// ReplacingMergeTree from losing existing values after merge.
 	UpdateFMSPCSeen = `
-		INSERT INTO pcs_fmspcs (fmspc, last_seen)
-		VALUES (?, ?)
+		INSERT INTO pcs_fmspcs (fmspc, platform, first_seen, last_seen, is_active)
+		SELECT ?, platform, first_seen, ?, is_active
+		FROM pcs_fmspcs
+		WHERE fmspc = ?
+		LIMIT 1
 	`
 
 	// ===================
